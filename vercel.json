@@ -3,13 +3,14 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/web",
   "outputDirectory": "apps/web/out",
+  "cleanUrls": true,
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=()" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
       ]
     }
