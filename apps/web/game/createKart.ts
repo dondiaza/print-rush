@@ -7,10 +7,15 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
+import type { CharacterDefinition, KartDefinition, RuntimeQuality } from "@print-rush/3d-factory";
+import { createGeneratedCharacter } from "@/factory/GeneratedCharacter";
+import { createGeneratedKart } from "@/factory/GeneratedKart";
 
 export type KartPalette = { body: Color3; accent: Color3; shirt: Color3; skin: Color3 };
+export type KartCustomization = { kart: KartDefinition; character: CharacterDefinition; quality?: RuntimeQuality };
 
-export function createKart(scene: Scene, name: string, palette: KartPalette, withDriver = true): TransformNode {
+export function createKart(scene: Scene, name: string, palette: KartPalette, withDriver = true, customization?: KartCustomization): TransformNode {
+  if (customization) return createCustomizedKart(scene, name, customization, withDriver);
   const root = new TransformNode(name, scene);
   const bodyMaterial = toonMaterial(scene, `${name}-body`, palette.body);
   const accentMaterial = toonMaterial(scene, `${name}-accent`, palette.accent);
@@ -87,6 +92,18 @@ export function createKart(scene: Scene, name: string, palette: KartPalette, wit
     mesh.receiveShadows = true;
     mesh.isPickable = false;
   });
+  return root;
+}
+
+function createCustomizedKart(scene: Scene, name: string, customization: KartCustomization, withDriver: boolean): TransformNode {
+  const root = createGeneratedKart(scene, customization.kart, name, customization.quality ?? "HIGH");
+  if (withDriver) {
+    const driver = createGeneratedCharacter(scene, customization.character, `${name}-driver`, { pose: "DRIVING", quality: customization.quality ?? "HIGH" });
+    driver.parent = root;
+    driver.scaling.setAll(.76 * customization.kart.compatibility.driverScale);
+    driver.position.set(0, customization.kart.compatibility.seatHeight - .03, -.38);
+    driver.metadata = { ...driver.metadata, animationBaseY: driver.position.y };
+  }
   return root;
 }
 

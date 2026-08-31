@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AllowedLaps } from "@print-rush/game-core";
 import { GameRuntime, type HudState, type RaceResult } from "@/game/GameRuntime";
+import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
+import { loadActiveTrack } from "@/factory/TrackFactory";
 
 type Props = {
   laps: AllowedLaps;
@@ -21,6 +23,7 @@ const INITIAL_HUD: HudState = {
   driftCharge: 0,
   driftLevel: 0,
   hasItem: false,
+  itemName: null,
   countdown: 3,
   banner: null,
   playerProgress: 0,
@@ -40,7 +43,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
     const canvas = canvasRef.current;
     if (!canvas) return;
     let active = true;
-    void GameRuntime.create(canvas, { laps, muted, onHud: setHud, onFinish }).then((runtime) => {
+    void GameRuntime.create(canvas, { laps, muted, onHud: setHud, onFinish, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
       if (!active) { runtime.dispose(); return; }
       runtimeRef.current = runtime;
       runtime.start();
@@ -81,6 +84,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
     onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       runtimeRef.current?.setTouchControl(control, true);
+      if (control === "drift") navigator.vibrate?.(10);
     },
     onPointerUp: () => runtimeRef.current?.setTouchControl(control, control === "throttle" && autoAccelerate),
     onPointerCancel: () => runtimeRef.current?.setTouchControl(control, control === "throttle" && autoAccelerate),
@@ -108,8 +112,8 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             </div>
             <MiniMap player={hud.playerProgress} bots={hud.botProgress} />
             <div className={`hud-item ${hud.hasItem ? "ready" : ""}`}>
-              <b>{hud.hasItem ? "T" : "—"}</b>
-              <span>{hud.hasItem ? "E · THREAD BOOST" : "SIN OBJETO"}</span>
+              <b>{hud.hasItem ? hud.itemName?.slice(0, 1) : "—"}</b>
+              <span>{hud.hasItem ? `E · ${hud.itemName?.toUpperCase()}` : "SIN OBJETO"}</span>
             </div>
             <div className="drift-meter">
               <div className="drift-label"><span>DRIFT CHARGE</span><b>LV {hud.driftLevel}</b></div>
@@ -129,7 +133,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             <div className="action-pad">
               <button className="touch-button" {...hold("brake")}>FRENO</button>
               <button className="touch-button drift" {...hold("drift")}>DRIFT</button>
-              <button className="touch-button" onPointerDown={() => runtimeRef.current?.useItem()}>ITEM</button>
+              <button className="touch-button" onPointerDown={() => { runtimeRef.current?.useItem(); navigator.vibrate?.([12, 18, 12]); }}>ITEM</button>
               <button className="touch-button primary" {...hold("throttle")}>GAS</button>
             </div>
           </div>

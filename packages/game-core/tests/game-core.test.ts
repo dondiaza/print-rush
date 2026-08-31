@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   InputRateLimiter,
+  ItemDefinitions,
   RacePhase,
   SeededRandom,
   advanceRaceProgress,
@@ -93,6 +94,10 @@ describe("track rules", () => {
 });
 
 describe("seeded item RNG", () => {
+  it("ships ten deterministic gameplay-neutral items", () => {
+    expect(Object.values(ItemDefinitions)).toHaveLength(10);
+    expect(Object.values(ItemDefinitions).every((item) => item.weightByPosition.length === 4)).toBe(true);
+  });
   it("is reproducible", () => {
     const first = new SeededRandom(42);
     const second = new SeededRandom(42);

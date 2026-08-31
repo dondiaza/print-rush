@@ -17,8 +17,12 @@ import {
   type RaceProgress,
 } from "@print-rush/game-core";
 import { PlayerStateSchema, RaceStateSchema } from "./RaceState.js";
+import {
+  createDefaultCharacter, createDefaultKart, hashDefinition, migrateCharacter, migrateKart,
+  validateCharacter, validateKart,
+} from "@print-rush/3d-factory";
 
-type RoomOptions = { laps?: number; nickname?: string; maxPlayers?: number };
+type RoomOptions = { laps?: number; nickname?: string; maxPlayers?: number; character?: unknown; kart?: unknown };
 
 type InternalPlayer = {
   input: GameInput;
@@ -74,6 +78,11 @@ export class RaceRoom extends Room<{ state: RaceStateSchema }> {
     const player = new PlayerStateSchema();
     player.id = client.sessionId;
     player.nickname = this.cleanNickname(options.nickname);
+    const customization = this.cleanCustomization(options.character, options.kart);
+    player.characterDefinition = JSON.stringify(customization.character);
+    player.kartDefinition = JSON.stringify(customization.kart);
+    player.characterHash = hashDefinition(customization.character);
+    player.kartHash = hashDefinition(customization.kart);
     player.kart.x = spawn.position.x;
     player.kart.y = spawn.position.y;
     player.kart.z = spawn.position.z;
@@ -163,5 +172,18 @@ export class RaceRoom extends Room<{ state: RaceStateSchema }> {
     if (typeof value !== "string") return "Rider";
     const cleaned = value.replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 18);
     return cleaned || "Rider";
+  }
+
+  private cleanCustomization(characterInput: unknown, kartInput: unknown) {
+    try {
+      if (JSON.stringify(characterInput ?? "").length > 12_000 || JSON.stringify(kartInput ?? "").length > 5_000) throw new Error("Customization payload too large");
+      const character = migrateCharacter(characterInput);
+      const kart = migrateKart(kartInput);
+      if (validateCharacter(character).some((issue) => issue.severity === "ERROR")) throw new Error("Invalid character");
+      if (validateKart(kart).some((issue) => issue.severity === "ERROR")) throw new Error("Invalid kart");
+      return { character, kart };
+    } catch {
+      return { character: createDefaultCharacter(), kart: createDefaultKart() };
+    }
   }
 }

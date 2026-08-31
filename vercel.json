@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install",
-  "buildCommand": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/web",
+  "buildCommand": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/web",
   "outputDirectory": "apps/web/out",
   "headers": [
     {

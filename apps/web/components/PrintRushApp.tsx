@@ -1,11 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { RaceResult } from "@/game/GameRuntime";
+import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
+import { loadActiveTrack } from "@/factory/TrackFactory";
 
 const MenuScene = dynamic(() => import("./MenuScene").then((module) => module.MenuScene), { ssr: false });
 const RaceExperience = dynamic(() => import("./RaceExperience").then((module) => module.RaceExperience), { ssr: false });
+const PodiumScene = dynamic(() => import("./PodiumScene").then((module) => module.PodiumScene), { ssr: false });
 
 type AppScreen = "home" | "setup" | "race" | "results";
 
@@ -15,6 +18,13 @@ export function PrintRushApp() {
   const [nickname, setNickname] = useState("Rookie");
   const [result, setResult] = useState<RaceResult | null>(null);
   const [muted, setMuted] = useState(false);
+  const [garage, setGarage] = useState({ character: "Rookie", kart: "Press Runner", track: "Flagship Store" });
+  useEffect(() => {
+    if (screen === "race") return;
+    let active = true;
+    queueMicrotask(() => { if (active) setGarage({ character: loadActiveCharacter().name, kart: loadActiveKart().name, track: loadActiveTrack().config.name }); });
+    return () => { active = false; };
+  }, [screen]);
 
   const startRace = () => {
     const cleaned = nickname.trim().slice(0, 18) || "Rookie";
@@ -65,14 +75,15 @@ export function PrintRushApp() {
           <p>El taller cierra. La pista abre. Derrapa entre tinta, paquetes y camisetas en una carrera arcade hecha para web.</p>
           <div className="hero-actions">
             <button className="cta-primary" onClick={() => setScreen("setup")}><span>JUGAR AHORA</span><b>→</b></button>
-            <button className="cta-ghost" onClick={() => setScreen("setup")}>CONFIGURAR CARRERA</button>
+            <a className="cta-ghost garage-link" href="/garage/character">CREAR PERSONAJE</a>
+            <a className="cta-ghost garage-link" href="/garage/kart">DISEÑAR KART</a>
           </div>
           <div className="race-meta" aria-label="Características">
             <span><b>01</b> CIRCUITO</span>
             <span><b>03</b> RIVALES</span>
             <span><b>∞</b> DERRAPE</span>
           </div>
-          <div className="scroll-note">FLAGSHIP STORE <span>↘</span></div>
+          <div className="scroll-note">{garage.track.toUpperCase()} <span>↘</span></div>
         </section>
       )}
 
@@ -80,7 +91,7 @@ export function PrintRushApp() {
         <section className="setup-panel" aria-labelledby="setup-title">
           <button className="back-button" onClick={() => setScreen("home")}>← VOLVER</button>
           <div className="setup-heading">
-            <span>SOLO RACE / FLAGSHIP STORE</span>
+            <span>SOLO RACE / {garage.track.toUpperCase()}</span>
             <h2 id="setup-title">PREPARA<br />TU TIRADA</h2>
           </div>
           <div className="setup-fields">
@@ -96,8 +107,12 @@ export function PrintRushApp() {
                 ))}
               </div>
             </fieldset>
+            <div className="setup-line"><span>PERSONAJE</span><strong>{garage.character.toUpperCase()}</strong></div>
+            <div className="setup-line"><span>KART</span><strong>{garage.kart.toUpperCase()}</strong></div>
+            <div className="setup-line"><span>CIRCUITO</span><strong>{garage.track.toUpperCase()}</strong></div>
             <div className="setup-line"><span>RIVALES</span><strong>3 BOTS / NORMAL</strong></div>
-            <div className="setup-line"><span>OBJETOS</span><strong>THREAD BOOST / ON</strong></div>
+            <div className="setup-line"><span>OBJETOS</span><strong>10 ITEMS / ON</strong></div>
+            <div className="setup-line"><span>GARAGE</span><strong><a href="/garage/character">PERSONAJE</a> · <a href="/garage/kart">KART</a> · <a href="/factory/track">PISTA</a></strong></div>
           </div>
           <button className="cta-primary setup-start" onClick={startRace}><span>ARRANCAR</span><b>↗</b></button>
           <p className="controls-note">WASD / FLECHAS · ESPACIO PARA DERRAPAR · E PARA USAR OBJETO · R PARA REAPARECER</p>
@@ -105,6 +120,8 @@ export function PrintRushApp() {
       )}
 
       {screen === "results" && result && (
+        <>
+        <PodiumScene position={result.position} />
         <section className="results-panel">
           <span className="result-eyebrow">CARRERA TERMINADA</span>
           <div className="result-position">#{result.position}</div>
@@ -119,6 +136,7 @@ export function PrintRushApp() {
             <button className="cta-ghost" onClick={() => setScreen("home")}>SALIR</button>
           </div>
         </section>
+        </>
       )}
     </main>
   );

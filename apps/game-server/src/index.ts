@@ -1,23 +1,18 @@
-import { createServer } from "node:http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
+import type { Request, Response } from "express";
 import { RaceRoom } from "./rooms/RaceRoom.js";
 
 const startedAt = Date.now();
 const version = process.env.npm_package_version ?? "0.1.0";
 const port = Number(process.env.PORT ?? 2567);
 
-const httpServer = createServer((request, response) => {
-  if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ status: "ok", version, uptime: Math.floor((Date.now() - startedAt) / 1_000) }));
-    return;
-  }
-  response.writeHead(404, { "content-type": "application/json" });
-  response.end(JSON.stringify({ error: "not_found" }));
+const transport = new WebSocketTransport();
+transport.getExpressApp().get("/health", (_request: Request, response: Response) => {
+  response.setHeader("cache-control", "no-store");
+  response.json({ status: "ok", version, uptime: Math.floor((Date.now() - startedAt) / 1_000) });
 });
-
-const gameServer = new Server({ transport: new WebSocketTransport({ server: httpServer }) });
+const gameServer = new Server({ transport });
 gameServer.define("race", RaceRoom);
 
 await gameServer.listen(port);
@@ -25,7 +20,6 @@ console.info(JSON.stringify({ event: "server_started", port, version, timestamp:
 
 const shutdown = async (): Promise<void> => {
   await gameServer.gracefullyShutdown(false);
-  httpServer.close();
 };
 
 process.on("SIGTERM", shutdown);

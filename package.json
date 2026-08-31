@@ -10,12 +10,12 @@
     "dev": "npm run dev -w @print-rush/web",
     "dev:web": "npm run dev -w @print-rush/web",
     "dev:server": "npm run dev -w @print-rush/game-server",
-    "build": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/game-server && npm run build -w @print-rush/web",
-    "prelint": "npm run build -w @print-rush/game-core",
-    "lint": "npm run lint -w @print-rush/web && npm run lint -w @print-rush/game-server && npm run lint -w @print-rush/game-core",
-    "pretypecheck": "npm run build -w @print-rush/game-core",
-    "typecheck": "npm run typecheck -w @print-rush/game-core && npm run typecheck -w @print-rush/game-server && npm run typecheck -w @print-rush/web",
-    "test": "npm run test -w @print-rush/game-core",
+    "build": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/game-server && npm run build -w @print-rush/web",
+    "prelint": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory",
+    "lint": "npm run lint -w @print-rush/web && npm run lint -w @print-rush/game-server && npm run lint -w @print-rush/game-core && npm run lint -w @print-rush/3d-factory",
+    "pretypecheck": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory",
+    "typecheck": "npm run typecheck -w @print-rush/game-core && npm run typecheck -w @print-rush/3d-factory && npm run typecheck -w @print-rush/game-server && npm run typecheck -w @print-rush/web",
+    "test": "npm run test -w @print-rush/game-core && npm run test -w @print-rush/3d-factory",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "engines": {

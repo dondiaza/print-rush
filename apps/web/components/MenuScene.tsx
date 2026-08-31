@@ -15,6 +15,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { createKart } from "@/game/createKart";
+import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
 
 export function MenuScene() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,7 +72,7 @@ export function MenuScene() {
       accent: Color3.FromHexString("#b9ff45"),
       shirt: Color3.FromHexString("#f7f2e8"),
       skin: Color3.FromHexString("#d99b72"),
-    });
+    }, true, { character: loadActiveCharacter(), kart: loadActiveKart(), quality: window.innerWidth < 800 ? "MEDIUM" : "HIGH" });
     kart.position.set(3.5, .08, 0);
     kart.rotation.y = -0.56;
     kart.scaling.scaleInPlace(1.28);

@@ -16,6 +16,7 @@ import {
 import type { RigidBody, World } from "@dimforge/rapier3d";
 import {
   VehicleConfig,
+  SeededRandom,
   advanceRaceProgress,
   applyBoost,
   createKartState,
@@ -24,13 +25,18 @@ import {
   rankPlayers,
   sanitizeInput,
   simulateKart,
+  pickWeightedItem,
+  type ItemDefinition,
   type AllowedLaps,
   type GameInput,
   type KartState,
   type RaceProgress,
 } from "@print-rush/game-core";
+import { CharacterPresets, KartPresets, type CharacterDefinition, type KartDefinition } from "@print-rush/3d-factory";
 import { buildFlagshipStore, type BuiltTrack } from "./TrackBuilder";
 import { animateKartWheels, createEmissiveMaterial, createKart, setKartPose } from "./createKart";
+import { getDeviceReport, getHardwareScalingLevel } from "@/performance/PerformanceManager";
+import type { StoredTrack } from "@/factory/TrackFactory";
 
 export type HudState = {
   position: number;
@@ -41,6 +47,7 @@ export type HudState = {
   driftCharge: number;
   driftLevel: number;
   hasItem: boolean;
+  itemName: string | null;
   countdown: number | null;
   banner: string | null;
   playerProgress: number;
@@ -59,6 +66,9 @@ type GameRuntimeOptions = {
   muted: boolean;
   onHud: (state: HudState) => void;
   onFinish: (result: RaceResult) => void;
+  character: CharacterDefinition;
+  kartDefinition: KartDefinition;
+  trackDefinition: StoredTrack;
 };
 
 type BotState = {
@@ -89,7 +99,8 @@ export class GameRuntime {
   private elapsedMs = 0;
   private countdown = 3.4;
   private finished = false;
-  private hasItem = false;
+  private heldItem: ItemDefinition | null = null;
+  private readonly itemRandom = new SeededRandom((Date.now() ^ 0x51f15e) >>> 0);
   private boostsUsed = 0;
   private wrongWayTime = 0;
   private banner: { text: string; until: number } | null = null;
@@ -102,7 +113,8 @@ export class GameRuntime {
 
   private constructor(private readonly canvas: HTMLCanvasElement, private readonly options: GameRuntimeOptions) {
     this.engine = new Engine(canvas, true, { antialias: true, adaptToDeviceRatio: true, preserveDrawingBuffer: false });
-    this.engine.setHardwareScalingLevel(Math.max(1, window.devicePixelRatio / 1.45));
+    const device = getDeviceReport();
+    this.engine.setHardwareScalingLevel(getHardwareScalingLevel(device.profile));
     this.scene = new Scene(this.engine);
     this.scene.clearColor = new Color4(.025, .022, .032, 1);
     this.scene.fogMode = Scene.FOGMODE_EXP2;
@@ -127,13 +139,13 @@ export class GameRuntime {
     shadows.useBlurExponentialShadowMap = true;
     shadows.blurKernel = 14;
 
-    this.track = buildFlagshipStore(this.scene);
+    this.track = buildFlagshipStore(this.scene, options.trackDefinition);
     this.player = createKart(this.scene, "player", {
       body: Color3.FromHexString("#ff3da6"),
       accent: Color3.FromHexString("#b9ff45"),
       shirt: Color3.FromHexString("#f7f2e8"),
       skin: Color3.FromHexString("#d99b72"),
-    });
+    }, true, { character: options.character, kart: options.kartDefinition, quality: window.innerWidth < 800 ? "MEDIUM" : "HIGH" });
     this.player.getChildMeshes().forEach((mesh) => shadows.addShadowCaster(mesh));
 
     const botPalettes = [
@@ -147,7 +159,7 @@ export class GameRuntime {
         accent: Color3.FromHexString(accent!),
         shirt: Color3.FromHexString(index === 1 ? "#17141b" : "#f7f2e8"),
         skin: Color3.FromHexString(index === 2 ? "#70462e" : "#efb087"),
-      }),
+      }, true, { character: CharacterPresets[(index + 1) % CharacterPresets.length]!, kart: KartPresets[(index + 1) % KartPresets.length]!, quality: window.innerWidth < 800 ? "LOW" : "MEDIUM" }),
       totalProgress: -(.035 + index * .025),
       speed: 17.2 + index * .55,
       laneOffset: (index - 1) * 1.2,
@@ -178,9 +190,15 @@ export class GameRuntime {
     this.input.attach();
     this.audio.start();
     const resize = () => this.engine.resize();
+    const run = () => this.frame();
+    const visibility = () => {
+      if (document.hidden) { this.engine.stopRenderLoop(); this.audio.setPaused(true); }
+      else if (!this.disposed) { this.engine.runRenderLoop(run); this.audio.setPaused(this.input.paused); }
+    };
     window.addEventListener("resize", resize);
-    this.engine.onDisposeObservable.add(() => window.removeEventListener("resize", resize));
-    this.engine.runRenderLoop(() => this.frame());
+    document.addEventListener("visibilitychange", visibility);
+    this.engine.onDisposeObservable.add(() => { window.removeEventListener("resize", resize); document.removeEventListener("visibilitychange", visibility); });
+    this.engine.runRenderLoop(run);
   }
 
   setTouchControl(control: "left" | "right" | "throttle" | "brake" | "drift", active: boolean): void {
@@ -233,11 +251,11 @@ export class GameRuntime {
     this.track.itemBoxes.forEach((box) => {
       box.cooldown = Math.max(0, box.cooldown - dt);
       box.node.setEnabled(box.cooldown === 0);
-      if (box.cooldown === 0 && !this.hasItem && Vector3.DistanceSquared(box.position, this.player.position) < 5.5) {
-        this.hasItem = true;
+      if (box.cooldown === 0 && !this.heldItem && Vector3.DistanceSquared(box.position, this.player.position) < 5.5) {
+        this.heldItem = pickWeightedItem(this.estimatePosition(), this.itemRandom);
         box.cooldown = 6;
         box.node.setEnabled(false);
-        this.banner = { text: "THREAD BOOST READY", until: this.elapsedMs + 1_100 };
+        this.banner = { text: `${this.heldItem.name.toUpperCase()} READY`, until: this.elapsedMs + 1_100 };
         this.audio.pickup();
       }
     });
@@ -254,11 +272,10 @@ export class GameRuntime {
 
     this.elapsedMs += dt * 1_000;
     const input = this.input.snapshot();
-    if (input.useItem && this.hasItem) {
-      this.kart = applyBoost(this.kart, 1.25);
-      this.hasItem = false;
+    if (input.useItem && this.heldItem) {
+      this.activateItem(this.heldItem);
+      this.heldItem = null;
       this.boostsUsed += 1;
-      this.banner = { text: "THREAD BOOST", until: this.elapsedMs + 650 };
       this.audio.boost();
     }
     if (input.respawn) this.recover();
@@ -299,15 +316,17 @@ export class GameRuntime {
   }
 
   private applyTrackSurface(dt: number): void {
-    const ellipse = Math.sqrt((this.kart.position.x / 29) ** 2 + (this.kart.position.z / 19) ** 2);
-    const offRoad = ellipse < .73 || ellipse > 1.31;
+    let nearest = this.track.definition.racingSpline[0]!;
+    let distanceSquared = Number.POSITIVE_INFINITY;
+    for (const point of this.track.definition.racingSpline) {
+      const distance = (point.x - this.kart.position.x) ** 2 + (point.z - this.kart.position.z) ** 2;
+      if (distance < distanceSquared) { distanceSquared = distance; nearest = point; }
+    }
+    const offRoad = distanceSquared > (this.track.width * .62) ** 2;
     if (offRoad) {
       this.kart.speed *= Math.max(.94, 1 - dt * 3.6);
-      const angle = Math.atan2(this.kart.position.z / 19, this.kart.position.x / 29);
-      const targetX = Math.cos(angle) * 29;
-      const targetZ = Math.sin(angle) * 19;
-      this.kart.position.x += (targetX - this.kart.position.x) * dt * .36;
-      this.kart.position.z += (targetZ - this.kart.position.z) * dt * .36;
+      this.kart.position.x += (nearest.x - this.kart.position.x) * dt * .36;
+      this.kart.position.z += (nearest.z - this.kart.position.z) * dt * .36;
     }
     const bounds = this.track.definition.bounds;
     if (
@@ -402,7 +421,8 @@ export class GameRuntime {
       timeMs: this.elapsedMs,
       driftCharge: this.kart.driftCharge,
       driftLevel: this.kart.driftLevel,
-      hasItem: this.hasItem,
+      hasItem: this.heldItem !== null,
+      itemName: this.heldItem?.name ?? null,
       countdown: this.countdown > 0 ? Math.ceil(this.countdown) : null,
       banner,
       playerProgress: this.totalPlayerProgress(),
@@ -412,6 +432,24 @@ export class GameRuntime {
 
   private totalPlayerProgress(): number {
     return Math.max(0, this.progress.lap - 1 + this.progress.progress);
+  }
+
+  private estimatePosition(): number {
+    return 1 + this.bots.filter((bot) => bot.totalProgress > this.totalPlayerProgress()).length;
+  }
+
+  private activateItem(item: ItemDefinition): void {
+    if (item.category === "BOOST") this.kart = applyBoost(this.kart, item.duration);
+    if (item.category === "PROJECTILE") {
+      const target = [...this.bots].filter((bot) => bot.totalProgress >= this.totalPlayerProgress()).sort((a, b) => a.totalProgress - b.totalProgress)[0] ?? this.bots[0];
+      if (target) target.totalProgress -= .025 + item.duration * .008;
+    }
+    if (item.category === "TRAP") {
+      const target = [...this.bots].sort((a, b) => Math.abs(a.totalProgress - this.totalPlayerProgress()) - Math.abs(b.totalProgress - this.totalPlayerProgress()))[0];
+      if (target) target.totalProgress -= .018;
+    }
+    if (item.category === "DEFENSE") this.kart = applyBoost(this.kart, Math.min(.7, item.duration * .12));
+    this.banner = { text: item.name.toUpperCase(), until: this.elapsedMs + 760 };
   }
 
   private finishRace(): void {
@@ -451,6 +489,7 @@ class InputController {
   private respawnQueued = false;
   private readonly keys = new Set<string>();
   private readonly touch = new Map<string, boolean>();
+  private gamepadItemHeld = false;
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
     this.keys.add(event.code);
@@ -474,15 +513,20 @@ class InputController {
   queueItem(): void { this.itemQueued = true; }
   queueRespawn(): void { this.respawnQueued = true; }
   snapshot(): GameInput {
-    const left = this.keys.has("KeyA") || this.keys.has("ArrowLeft") || this.touch.get("left") === true;
-    const right = this.keys.has("KeyD") || this.keys.has("ArrowRight") || this.touch.get("right") === true;
-    this.steerValue = left === right ? 0 : left ? -1 : 1;
+    const gamepad = typeof navigator !== "undefined" ? navigator.getGamepads?.()[0] : null;
+    const axis = Math.abs(gamepad?.axes[0] ?? 0) > .16 ? gamepad!.axes[0]! : 0;
+    const left = this.keys.has("KeyA") || this.keys.has("ArrowLeft") || this.touch.get("left") === true || axis < -.16;
+    const right = this.keys.has("KeyD") || this.keys.has("ArrowRight") || this.touch.get("right") === true || axis > .16;
+    this.steerValue = axis !== 0 ? Math.max(-1, Math.min(1, axis)) : left === right ? 0 : left ? -1 : 1;
+    const gamepadItem = gamepad?.buttons[2]?.pressed === true || gamepad?.buttons[3]?.pressed === true;
+    if (gamepadItem && !this.gamepadItemHeld) this.itemQueued = true;
+    this.gamepadItemHeld = gamepadItem;
     const input = sanitizeInput({
       sequence: ++this.sequence,
       steer: this.steerValue,
-      throttle: this.keys.has("KeyW") || this.keys.has("ArrowUp") || this.touch.get("throttle") ? 1 : 0,
-      brake: this.keys.has("KeyS") || this.keys.has("ArrowDown") || this.touch.get("brake") ? 1 : 0,
-      drift: this.keys.has("Space") || this.touch.get("drift") === true,
+      throttle: this.keys.has("KeyW") || this.keys.has("ArrowUp") || this.touch.get("throttle") || gamepad?.buttons[7]?.value ? Math.max(gamepad?.buttons[7]?.value ?? 0, 1) : 0,
+      brake: this.keys.has("KeyS") || this.keys.has("ArrowDown") || this.touch.get("brake") || gamepad?.buttons[6]?.value ? Math.max(gamepad?.buttons[6]?.value ?? 0, 1) : 0,
+      drift: this.keys.has("Space") || this.touch.get("drift") === true || gamepad?.buttons[0]?.pressed === true,
       useItem: this.itemQueued,
       respawn: this.respawnQueued,
     });

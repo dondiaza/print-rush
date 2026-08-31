@@ -19,6 +19,10 @@ export class PlayerStateSchema extends Schema {
   @type("uint8") checkpoint = 0;
   @type("uint8") racePosition = 1;
   @type("uint32") lastProcessedInput = 0;
+  @type("string") characterDefinition = "";
+  @type("string") kartDefinition = "";
+  @type("string") characterHash = "";
+  @type("string") kartHash = "";
   @type(KartStateSchema) kart = new KartStateSchema();
 }
 

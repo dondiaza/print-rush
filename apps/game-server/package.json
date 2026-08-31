@@ -14,9 +14,12 @@
     "@colyseus/core": "^0.18.10",
     "@colyseus/schema": "^5.0.25",
     "@colyseus/ws-transport": "^0.18.2",
-    "@print-rush/game-core": "0.1.0"
+    "@print-rush/3d-factory": "0.2.0",
+    "@print-rush/game-core": "0.1.0",
+    "express": "^5.2.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

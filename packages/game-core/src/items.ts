@@ -40,6 +40,30 @@ export const ItemDefinitions = Object.freeze({
     cooldown: 1,
     weightByPosition: [8, 12, 16, 20],
   },
+  inkSlick: {
+    id: "ink-slick", name: "Ink Slick", category: "TRAP", duration: 6, cooldown: .7,
+    weightByPosition: [17, 15, 11, 8],
+  },
+  expressLabel: {
+    id: "express-label", name: "Express Label", category: "BOOST", duration: 1.7, cooldown: .25,
+    weightByPosition: [7, 11, 18, 25],
+  },
+  tapeSnare: {
+    id: "tape-snare", name: "Tape Snare", category: "PROJECTILE", duration: 1.4, cooldown: .9,
+    weightByPosition: [13, 16, 17, 15],
+  },
+  bubbleWrap: {
+    id: "bubble-wrap", name: "Bubble Wrap", category: "DEFENSE", duration: 5, cooldown: 1,
+    weightByPosition: [8, 11, 15, 19],
+  },
+  flashDryer: {
+    id: "flash-dryer", name: "Flash Dryer", category: "PROJECTILE", duration: 1.2, cooldown: 1,
+    weightByPosition: [12, 16, 18, 16],
+  },
+  threadHook: {
+    id: "thread-hook", name: "Thread Hook", category: "PROJECTILE", duration: 1, cooldown: .7,
+    weightByPosition: [6, 12, 19, 26],
+  },
 } satisfies Record<string, ItemDefinition>);
 
 export class SeededRandom {

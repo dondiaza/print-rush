@@ -8,17 +8,19 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { createFlagshipStoreTrack, type TrackDefinition } from "@print-rush/game-core";
+import type { TrackDefinition } from "@print-rush/game-core";
+import { TrackPresets, type StoredTrack } from "@/factory/TrackFactory";
 import { createEmissiveMaterial } from "./createKart";
 
 export type BuiltTrack = {
   definition: TrackDefinition;
   itemBoxes: Array<{ node: TransformNode; position: Vector3; cooldown: number }>;
   boostPads: Vector3[];
+  width: number;
 };
 
-export function buildFlagshipStore(scene: Scene): BuiltTrack {
-  const definition = createFlagshipStoreTrack();
+export function buildFlagshipStore(scene: Scene, stored: StoredTrack = TrackPresets[0]!): BuiltTrack {
+  const definition = stored.definition;
   const asphalt = material(scene, "track-ink", new Color3(0.095, 0.09, 0.12), 0.86);
   const floorMaterial = material(scene, "store-floor", new Color3(0.34, 0.31, 0.28), 0.95);
   const pink = createEmissiveMaterial(scene, "pink-ink", Color3.FromHexString("#ff3da6"));
@@ -38,9 +40,9 @@ export function buildFlagshipStore(scene: Scene): BuiltTrack {
     const next = definition.racingSpline[(index + 1) % definition.racingSpline.length]!;
     const tangent = new Vector3(next.x - previous.x, 0, next.z - previous.z).normalize();
     const normal = new Vector3(-tangent.z, 0, tangent.x);
-    const center = new Vector3(point.x, 0.03, point.z);
-    left.push(center.add(normal.scale(5.25)));
-    right.push(center.subtract(normal.scale(5.25)));
+    const center = new Vector3(point.x, point.y + 0.03, point.z);
+    left.push(center.add(normal.scale(stored.config.width / 2)));
+    right.push(center.subtract(normal.scale(stored.config.width / 2)));
   });
   left.push(left[0]!.clone());
   right.push(right[0]!.clone());
@@ -58,7 +60,7 @@ export function buildFlagshipStore(scene: Scene): BuiltTrack {
     const normal = new Vector3(-tangent.z, 0, tangent.x);
     for (const side of [-1, 1]) {
       const instance = barrierBase.createInstance(`barrier-${index}-${side}`);
-      instance.position.set(point.x + normal.x * 5.65 * side, 0.28, point.z + normal.z * 5.65 * side);
+      instance.position.set(point.x + normal.x * (stored.config.width / 2 + .4) * side, point.y + 0.28, point.z + normal.z * (stored.config.width / 2 + .4) * side);
       instance.rotation.y = Math.atan2(tangent.x, tangent.z);
     }
   }
@@ -72,14 +74,17 @@ export function buildFlagshipStore(scene: Scene): BuiltTrack {
     dash.material = paper;
   });
 
-  createStartLine(scene, paper, dark);
+  createStartLine(scene, paper, dark, definition, stored.config.width);
   createStoreProps(scene, pink, acid, paper, dark);
 
-  const boostPads = [new Vector3(0, 0.11, 19), new Vector3(-29, 0.11, 0)];
+  const boostPads = [24, 48].map((index) => { const point = definition.racingSpline[index]!; return new Vector3(point.x, point.y + .11, point.z); });
   boostPads.forEach((position, index) => {
+    const splineIndex = index === 0 ? 24 : 48;
+    const point = definition.racingSpline[splineIndex]!;
+    const next = definition.racingSpline[(splineIndex + 1) % definition.racingSpline.length]!;
     const pad = MeshBuilder.CreateBox(`boost-pad-${index}`, { width: 3.4, height: 0.08, depth: 5.2 }, scene);
     pad.position.copyFrom(position);
-    pad.rotation.y = index === 0 ? Math.PI / 2 : 0;
+    pad.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
     pad.material = acid;
     for (let arrow = -1; arrow <= 1; arrow += 1) {
       const strip = MeshBuilder.CreateBox(`boost-strip-${index}-${arrow}`, { width: 0.34, height: 0.05, depth: 3.4 }, scene);
@@ -105,26 +110,33 @@ export function buildFlagshipStore(scene: Scene): BuiltTrack {
     return { node, position: node.position.clone(), cooldown: 0 };
   });
 
-  return { definition, itemBoxes, boostPads };
+  return { definition, itemBoxes, boostPads, width: stored.config.width };
 }
 
-function createStartLine(scene: Scene, paper: PBRMaterial, dark: PBRMaterial): void {
+function createStartLine(scene: Scene, paper: PBRMaterial, dark: PBRMaterial, definition: TrackDefinition, width: number): void {
+  const point = definition.racingSpline[0]!;
+  const next = definition.racingSpline[1]!;
+  const yaw = Math.atan2(next.x - point.x, next.z - point.z);
+  const normal = new Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
   for (let index = 0; index < 10; index += 1) {
-    const stripe = MeshBuilder.CreateBox(`start-${index}`, { width: 1.05, height: 0.06, depth: 1.05 }, scene);
-    stripe.position.set(0, 0.1, -23.75 + index * 1.05);
+    const stripe = MeshBuilder.CreateBox(`start-${index}`, { width: width / 10, height: 0.06, depth: 1.05 }, scene);
+    const across = -width / 2 + (index + .5) * (width / 10);
+    stripe.position.set(point.x + normal.x * across, point.y + .1, point.z + normal.z * across);
+    stripe.rotation.y = yaw;
     stripe.material = index % 2 ? dark : paper;
   }
   const archLeft = MeshBuilder.CreateBox("start-arch-left", { width: 0.45, height: 6.5, depth: 0.45 }, scene);
-  archLeft.position.set(0, 3.2, -25);
+  archLeft.position.set(point.x + normal.x * (width / 2 + .55), point.y + 3.2, point.z + normal.z * (width / 2 + .55));
   archLeft.material = dark;
   const archRight = archLeft.clone("start-arch-right");
-  archRight.position.z = -13;
-  const archTop = MeshBuilder.CreateBox("start-arch-top", { width: .6, height: 1.1, depth: 12.4 }, scene);
-  archTop.position.set(0, 6.1, -19);
+  archRight.position.set(point.x - normal.x * (width / 2 + .55), point.y + 3.2, point.z - normal.z * (width / 2 + .55));
+  const archTop = MeshBuilder.CreateBox("start-arch-top", { width: width + 1.5, height: 1.1, depth: .6 }, scene);
+  archTop.position.set(point.x, point.y + 6.1, point.z);
+  archTop.rotation.y = yaw;
   archTop.material = dark;
   const sign = MeshBuilder.CreatePlane("start-sign", { width: 8.2, height: 1.5 }, scene);
-  sign.position.set(-.32, 6.1, -19);
-  sign.rotation.y = -Math.PI / 2;
+  sign.position.set(point.x - Math.sin(yaw) * .32, point.y + 6.1, point.z - Math.cos(yaw) * .32);
+  sign.rotation.y = yaw + Math.PI;
   sign.material = createEmissiveMaterial(scene, "start-sign-mat", Color3.FromHexString("#ff3da6"));
 }
 
