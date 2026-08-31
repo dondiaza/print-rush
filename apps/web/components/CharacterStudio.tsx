@@ -28,7 +28,7 @@ export function CharacterStudio() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => { let active = true; queueMicrotask(() => { if (active) { setDefinition(loadActiveCharacter()); setLibrary(loadCharacters()); } }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; queueMicrotask(() => { if (active) { const loaded = loadActiveCharacter(); setDefinition((current) => JSON.stringify(current) === JSON.stringify(loaded) ? current : loaded); setLibrary(loadCharacters()); } }); return () => { active = false; }; }, []);
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); streamRef.current?.getTracks().forEach((track) => track.stop()); }, [photoUrl]);
 
   const mutate = (fn: (draft: CharacterDefinition) => void) => {

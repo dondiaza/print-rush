@@ -10,7 +10,7 @@ export function KartStudio() {
   const [definition, setDefinition] = useState<KartDefinition>(() => createDefaultKart());
   const [library, setLibrary] = useState<KartDefinition[]>([]);
   const [status, setStatus] = useState("Listo para fabricar");
-  useEffect(() => { let active = true; queueMicrotask(() => { if (active) { setDefinition(loadActiveKart()); setLibrary(loadKarts()); } }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; queueMicrotask(() => { if (active) { const loaded = loadActiveKart(); setDefinition((current) => JSON.stringify(current) === JSON.stringify(loaded) ? current : loaded); setLibrary(loadKarts()); } }); return () => { active = false; }; }, []);
   const mutate = (fn: (draft: KartDefinition) => void) => setDefinition((current) => { const next = structuredClone(current); fn(next); return next; });
   const save = () => {
     const error = validateKart(definition).find((entry) => entry.severity === "ERROR");
