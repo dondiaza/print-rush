@@ -38,10 +38,10 @@ export function simulateKart(previous: KartState, rawInput: GameInput, dt: numbe
     position: { ...previous.position },
   };
   const wasDrifting = previous.driftCharge > 0;
-  const canDrift = Math.abs(state.speed) > 7 && Math.abs(input.steer) > 0.22;
+  const canDrift = Math.abs(state.speed) > 6.2 && Math.abs(input.steer) > 0.18;
 
   if (input.drift && canDrift) {
-    state.driftCharge = Math.min(2.25, state.driftCharge + dt * Math.abs(input.steer));
+    state.driftCharge = Math.min(2.25, state.driftCharge + dt * (.5 + Math.abs(input.steer) * .72));
   } else if (wasDrifting) {
     state.boostRemaining = Math.min(
       VehicleConfig.maxBoostSeconds,
@@ -71,8 +71,15 @@ export function simulateKart(previous: KartState, rawInput: GameInput, dt: numbe
   const steeringRate = VehicleConfig.steeringLowSpeed +
     (VehicleConfig.steeringHighSpeed - VehicleConfig.steeringLowSpeed) * speedRatio;
   const driftMultiplier = input.drift && canDrift ? VehicleConfig.driftTurnMultiplier : 1;
+  const steeringAuthority = .32 + speedRatio * .68;
   const direction = state.speed < 0 ? -1 : 1;
-  state.rotation += input.steer * steeringRate * driftMultiplier * direction * dt;
+  state.rotation += input.steer * steeringRate * driftMultiplier * steeringAuthority * direction * dt;
+
+  if (input.drift && canDrift) {
+    // Drifting should rotate decisively without killing momentum. The small
+    // speed bleed gives the player a reason to release into a charged boost.
+    state.speed *= Math.max(.992, 1 - dt * .28);
+  }
 
   state.position.x += Math.sin(state.rotation) * state.speed * dt;
   state.position.z += Math.cos(state.rotation) * state.speed * dt;

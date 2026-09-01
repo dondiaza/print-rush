@@ -1,35 +1,23 @@
-# Print Rush
+# Print Rush V4
 
-Print Rush es un juego web 3D de carreras arcade ambientado en una tienda-taller de camisetas. Este repositorio contiene el vertical slice jugable y la base de servidor autoritativo del producto descrito en `docs/`.
+Print Rush es un videojuego web 3D de carreras arcade ambientado en el universo de impresión y camisetas de Pampling. El frontend jugable está construido con Next.js, Babylon.js y Rapier; las reglas compartidas y el servidor autoritativo viven en workspaces independientes.
 
-## Estado actual
+## V4 jugable
 
-La versión actual incluye:
-
-- circuito procedural **Flagship Store**, sin assets externos;
-- personaje y kart paramétricos equipables, con ocho y cinco presets respectivamente;
-- avatar desde foto con análisis local en worker, cámara, consentimiento y borrado;
-- Circuit Factory con tres pistas por seed y edición de spline/anchura/tema;
-- Asset Browser con 50 props y exportación JSON versionada;
-- un kart controlable y tres bots visualmente distintos sobre racing spline;
-- conducción arcade a paso fijo, freno/reversa, drift de tres niveles y boost;
-- checkpoints en orden, vueltas 1/2/3/5, clasificación y resultados;
-- diez items deterministas, item boxes, placas de boost y recovery;
-- HUD, minimapa, sonido procedural, pausa y calidad dinámica;
-- teclado, gamepad y controles táctiles específicos para landscape;
-- PWA instalable y UI responsive;
-- paquete `game-core` compartido por cliente y servidor;
-- servidor Colyseus 0.18 autoritativo, hasta cuatro clientes, input validation/rate limiting, state sync y reconexión;
-- perfiles LOW–ULTRA, dashboard de rendimiento, PWA offline y CI;
-- tests unitarios de reglas críticas, factory, migraciones y determinismo.
-
-Consulta [3D Factory V2/V3](docs/FACTORY_V2_V3.md) para las rutas, contratos y garantías de privacidad.
-
-El servidor WebSocket se despliega por separado en infraestructura Node persistente. Vercel aloja el frontend y no sustituye ese runtime.
+- Cinco circuitos extensos: T-Shirt Store Grand Prix, Warehouse Mayhem, Print Factory Panic, Office Overdrive y Manga Convention Madness.
+- Cinco sectores por circuito con superficies, elevación, peralte, landmarks, hazards, rampas, boost pads y dos atajos transitables.
+- Circuit Factory V4 con métricas de longitud, desnivel, dificultad, tiempo estimado y validación antes de guardar.
+- Conducción arcade a 60 Hz con dirección progresiva, ayuda suave de trazada, salida turbo, rebufo, saltos, recuperación y autopiloto después de meta.
+- Derrape de tres niveles con boost al soltar, inclinación del kart, humo, partículas y skid marks mediante pools reutilizables.
+- Trece power-ups V4 con ruleta, balance por posición y distancia, proyectiles físicos, trampas, áreas, escudo, indicadores y lanzamiento hacia atrás.
+- Feedback completo de velocidad e impacto: FOV, cámara, chispas, tinta periférica, aviso de proyectil, audio procedural y efectos de superficie.
+- Flujo completo: configuración, selección de pista, briefing y controles, parrilla, carrera, meta, autopiloto, podio, revancha, siguiente pista y pista aleatoria.
+- Teclado, gamepad y controles táctiles landscape con auto-aceleración, pausa y panel de ayuda.
+- Personaje y kart paramétricos, avatar desde foto procesado localmente, Asset Browser, PWA y perfiles de calidad adaptativos.
 
 ## Arranque
 
-Requisitos: Node.js 22 o superior.
+Requiere Node.js 22 o superior.
 
 ```bash
 npm install
@@ -38,7 +26,7 @@ npm run dev
 
 Abre `http://localhost:3000`.
 
-Servidor multiplayer:
+Servidor multijugador:
 
 ```bash
 npm run dev:server
@@ -48,17 +36,16 @@ Health check: `http://localhost:2567/health`.
 
 ## Controles
 
-| Acción | Teclado |
-| --- | --- |
-| Acelerar | W / ↑ |
-| Frenar / reversa | S / ↓ |
-| Girar | A/D / ←/→ |
-| Drift | Espacio |
-| Objeto | E |
-| Recovery | R |
-| Pausa | Esc |
-
-En móvil se muestran controles táctiles y opción de auto-aceleración.
+| Acción | Teclado | Móvil |
+| --- | --- | --- |
+| Acelerar | W / ↑ | GAS / AUTO |
+| Frenar o reversa | S / ↓ | FRENO |
+| Girar | A/D / ←/→ | Flechas |
+| Derrape | Espacio | DRIFT |
+| Usar objeto | E | ITEM |
+| Lanzar hacia atrás | S + E | FRENO + ITEM |
+| Recuperar | R | Menú de pausa |
+| Pausa | Esc | Menú del dispositivo |
 
 ## Verificación
 
@@ -66,7 +53,7 @@ En móvil se muestran controles táctiles y opción de auto-aceleración.
 npm run check
 ```
 
-Ejecuta lint, typecheck, tests y builds de los cuatro workspaces.
+El comando ejecuta lint, comprobación de tipos, 19 pruebas y builds de los cuatro workspaces.
 
 ## Estructura
 
@@ -80,10 +67,6 @@ packages/
 docs/              arquitectura y guías del proyecto
 ```
 
-## Configuración
+## Despliegue
 
-Copia `.env.example` a `.env.local` cuando conectes un servidor persistente. `NEXT_PUBLIC_GAME_SERVER_URL` es la única URL de networking expuesta al navegador; credenciales de PostgreSQL y Redis son siempre server-only.
-
-## Multiplayer
-
-`RaceRoom` acepta cuatro clientes, simula a 30 Hz, valida/rate-limita inputs, sincroniza hashes y definiciones cosméticas, y reserva asiento durante interrupciones móviles. El servidor WebSocket debe ejecutarse en infraestructura Node persistente; Vercel aloja el frontend estático.
+Vercel aloja el frontend estático. El servidor WebSocket Colyseus requiere infraestructura Node persistente y se configura mediante `NEXT_PUBLIC_GAME_SERVER_URL`; PostgreSQL, Redis y cualquier credencial permanecen exclusivamente en servidor.

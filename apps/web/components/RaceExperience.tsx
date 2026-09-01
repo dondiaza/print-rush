@@ -28,6 +28,16 @@ const INITIAL_HUD: HudState = {
   banner: null,
   playerProgress: 0,
   botProgress: [0, 0, 0],
+  phase: "GRID",
+  trackName: "PRINT RUSH",
+  sector: 1,
+  rouletteName: null,
+  shield: false,
+  inked: false,
+  shuffled: false,
+  incoming: false,
+  surface: "ASPHALT",
+  lastLap: false,
 };
 
 export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Props) {
@@ -38,6 +48,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoAccelerate, setAutoAccelerate] = useState(false);
+  const [showControls, setShowControls] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -103,17 +114,18 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
 
       {!loading && !error && (
         <>
-          <div className="connection-note">SOLO RACE · LOCAL 60 HZ</div>
-          <div className="hud" aria-live="polite">
+          <div className="connection-note">V4 · LOCAL 60 HZ · {hud.trackName.toUpperCase()}</div>
+          <div className={`hud ${hud.shuffled ? "hud-shuffled" : ""}`} aria-live="polite">
             <div className="hud-position">{hud.position}<span>/4</span></div>
             <div className="hud-top-center">
-              <div className="hud-lap">LAP {hud.lap} / {hud.laps}</div>
+              <div className={`hud-lap ${hud.lastLap ? "final" : ""}`}>{hud.lastLap ? "FINAL " : "LAP "}{hud.lap} / {hud.laps}</div>
               <div className="hud-time">{formatTime(hud.timeMs)}</div>
+              <div className="hud-sector">SECTOR {hud.sector} · {hud.surface}</div>
             </div>
             <MiniMap player={hud.playerProgress} bots={hud.botProgress} />
             <div className={`hud-item ${hud.hasItem ? "ready" : ""}`}>
-              <b>{hud.hasItem ? hud.itemName?.slice(0, 1) : "—"}</b>
-              <span>{hud.hasItem ? `E · ${hud.itemName?.toUpperCase()}` : "SIN OBJETO"}</span>
+              <b>{hud.rouletteName ? "?" : hud.hasItem ? hud.itemName?.slice(0, 1) : "—"}</b>
+              <span>{hud.rouletteName ? `PRINTING · ${hud.rouletteName}` : hud.hasItem ? `E · ${hud.itemName?.toUpperCase()}` : "SIN OBJETO"}</span>
             </div>
             <div className="drift-meter">
               <div className="drift-label"><span>DRIFT CHARGE</span><b>LV {hud.driftLevel}</b></div>
@@ -123,6 +135,10 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
           </div>
           {hud.countdown !== null && <div key={hud.countdown} className="countdown">{hud.countdown}</div>}
           {hud.banner && <div className="race-banner">{hud.banner}</div>}
+          {hud.incoming && <div className="incoming-warning"><b>!</b><span>INCOMING</span></div>}
+          {hud.inked && <div className="ink-hit" aria-label="Tinta en pantalla"><i /><i /><i /></div>}
+          {hud.shield && <div className="status-chip shield-chip">SHIELD x1</div>}
+          {Math.abs(hud.speedKph) > 135 && <div className="speed-lines" aria-hidden="true" />}
 
           <div className="mobile-controls" aria-label="Controles táctiles">
             <div className="steer-pad">
@@ -133,7 +149,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             <div className="action-pad">
               <button className="touch-button" {...hold("brake")}>FRENO</button>
               <button className="touch-button drift" {...hold("drift")}>DRIFT</button>
-              <button className="touch-button" onPointerDown={() => { runtimeRef.current?.useItem(); navigator.vibrate?.([12, 18, 12]); }}>ITEM</button>
+              <button className="touch-button" aria-label="Usar objeto; mantén freno para lanzar atrás" onPointerDown={() => { runtimeRef.current?.useItem(); navigator.vibrate?.([12, 18, 12]); }}>ITEM</button>
               <button className="touch-button primary" {...hold("throttle")}>GAS</button>
             </div>
           </div>
@@ -146,6 +162,8 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             <h2>PAUSA</h2>
             <button className="cta-primary" onClick={() => setPaused(false)}><span>CONTINUAR</span><b>→</b></button>
             <button className="cta-ghost" onClick={() => runtimeRef.current?.respawn()}>REAPARECER</button>
+            <button className="cta-ghost" onClick={() => setShowControls((value) => !value)} aria-expanded={showControls}>CONTROLES</button>
+            {showControls && <div className="pause-controls"><span>WASD / FLECHAS</span><span>ESPACIO · DERRAPE</span><span>E · ITEM</span><span>S + E · LANZAR ATRÁS</span><span>R · REAPARECER</span></div>}
             <button className="cta-ghost" onClick={onExit}>SALIR DE LA CARRERA</button>
           </div>
         </div>

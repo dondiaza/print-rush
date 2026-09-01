@@ -94,8 +94,8 @@ describe("track rules", () => {
 });
 
 describe("seeded item RNG", () => {
-  it("ships ten deterministic gameplay-neutral items", () => {
-    expect(Object.values(ItemDefinitions)).toHaveLength(10);
+  it("ships the thirteen V4 weighted items", () => {
+    expect(Object.values(ItemDefinitions)).toHaveLength(13);
     expect(Object.values(ItemDefinitions).every((item) => item.weightByPosition.length === 4)).toBe(true);
   });
   it("is reproducible", () => {
