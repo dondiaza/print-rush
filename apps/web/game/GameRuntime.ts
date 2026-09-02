@@ -55,6 +55,8 @@ import { animateCharacter, type CharacterVisual } from "@/render/CharacterBuilde
 import { characterVisualOf } from "@/factory/GeneratedCharacter";
 import { getDeviceReport, getHardwareScalingLevel, qualityForProfile } from "@/performance/PerformanceManager";
 import type { StoredTrack } from "@/factory/TrackFactory";
+import { AssetCatalog, circuitKeyForTheme } from "@/render/AssetCatalog";
+import { FAMILIES_BY_THEME } from "@/render/DecalScatter";
 
 /**
  * GAME RUNTIME V5.
@@ -131,7 +133,76 @@ type GameRuntimeOptions = {
   character: CharacterDefinition;
   kartDefinition: KartDefinition;
   trackDefinition: StoredTrack;
+  /**
+   * Real download progress, for the loading screen. Fires once per settled asset — there is no
+   * timer behind it, so if it stops moving something is genuinely still in flight.
+   */
+  onProgress?: (progress: LoadProgress) => void;
 };
+
+/**
+ * Turns an asset id into something a loading screen can show.
+ *
+ * Not decoration: the id is the only thing that identifies what a stalled download is waiting for,
+ * and `mat_paintedmetal_press_normal` in front of a player is worse than a category name.
+ */
+function labelForAsset(id: string): string {
+  if (id.startsWith("backdrop_")) return "Fondo del circuito";
+  if (id.startsWith("kart_wrap_")) return "Vinilo del kart";
+  if (id.startsWith("decal_")) return "Marcas y desgaste";
+  return "Materiales";
+}
+
+export type LoadProgress = {
+  loaded: number;
+  total: number;
+  /** What is being waited on, for a loading screen that says something true. */
+  label: string;
+};
+
+/**
+ * Everything that has to exist before the track can be built.
+ *
+ * The engine and scene are created here rather than in the constructor because textures need a
+ * scene to load into, and they must be loaded *before* `buildTrack` runs — a material cannot pick up
+ * a texture that arrives after it was created. So boot is: engine, scene, download, then build.
+ */
+type Boot = {
+  engine: Engine;
+  scene: Scene;
+  quality: ReturnType<typeof qualityForProfile>;
+  mobile: boolean;
+  hardwareScaling: number;
+  catalog: AssetCatalog | null;
+};
+
+/**
+ * The assets one race needs: the shared material set plus this circuit's own, the panorama, and the
+ * player's livery.
+ *
+ * Ids are filtered against the manifest inside `preload`, so a name that the bake does not carry is
+ * dropped from the total rather than stalling the bar. That is why this can list what the race wants
+ * without first checking what exists.
+ */
+function assetIdsForRace(catalog: AssetCatalog, theme: string, livery: string): string[] {
+  const circuit = circuitKeyForTheme(theme);
+  // Only the decal families this theme actually scatters. Downloading all seven would add weight for
+  // marks that would never be placed — an office floor is not going to get an ink splash.
+  const families = new Set(FAMILIES_BY_THEME[theme] ?? []);
+  const ids = catalog.manifest.assets
+    .filter((asset) => {
+      if (asset.category === "decal") {
+        return [...families].some((family) => asset.id.startsWith(`decal_${family}_`));
+      }
+      // Shared assets, plus this circuit's. Another circuit's set is not downloaded until it is
+      // selected, which is what keeps the per-race weight inside the budget.
+      return asset.circuit === undefined || asset.circuit === circuit;
+    })
+    .map((asset) => asset.id);
+  const wrap = catalog.wrap(livery);
+  if (wrap) ids.push(wrap.id);
+  return ids;
+}
 
 type Racer = {
   id: string;
@@ -154,6 +225,8 @@ const MAX_STEPS = 10;
 export class GameRuntime {
   private readonly engine: Engine;
   private readonly scene: Scene;
+  /** Baked assets for this race, or null when the manifest could not be read. */
+  private readonly catalog: AssetCatalog | null;
   private readonly instrumentation: SceneInstrumentation;
   private readonly camera: RaceCameraV5;
   private readonly input = new InputControllerV5();
@@ -199,21 +272,11 @@ export class GameRuntime {
   private readonly cameraContext: CameraContext = { aimPoint: new Vector3(), floorY: 0 };
   private readonly scratch = new Vector3();
 
-  private constructor(canvas: HTMLCanvasElement, private readonly options: GameRuntimeOptions) {
-    const device = getDeviceReport();
-    const quality = qualityForProfile(device.profile);
-    const mobile = device.profile === "LOW" || window.matchMedia("(pointer: coarse)").matches;
-
-    this.engine = new Engine(canvas, quality !== "LOW", {
-      antialias: quality !== "LOW",
-      adaptToDeviceRatio: true,
-      preserveDrawingBuffer: false,
-      powerPreference: "high-performance",
-    });
-    this.engine.setHardwareScalingLevel(getHardwareScalingLevel(device.profile));
-
-    this.scene = new Scene(this.engine);
-    this.scene.skipPointerMovePicking = true;
+  private constructor(private readonly options: GameRuntimeOptions, boot: Boot) {
+    const { quality, mobile, catalog } = boot;
+    this.engine = boot.engine;
+    this.scene = boot.scene;
+    this.catalog = catalog;
     this.instrumentation = new SceneInstrumentation(this.scene);
 
     const baked = options.trackDefinition.baked;
@@ -224,6 +287,7 @@ export class GameRuntime {
     this.track = buildTrack(this.scene, baked, {
       quality,
       density: quality === "LOW" ? 0.45 : quality === "MEDIUM" ? 0.7 : 1,
+      catalog,
     });
     this.track.lighting.attachCamera(this.camera.camera);
 
@@ -249,6 +313,7 @@ export class GameRuntime {
       character: options.character,
       kart: options.kartDefinition,
       quality: quality === "LOW" ? "LOW" : quality === "MEDIUM" ? "MEDIUM" : "HIGH",
+      wrap: catalog?.wrapTexture(options.kartDefinition.livery ?? "NONE") ?? null,
     });
     playerVisual.getChildMeshes().forEach((mesh) => this.track.lighting.addShadowCaster(mesh));
 
@@ -258,6 +323,7 @@ export class GameRuntime {
     // ---------------------------------------------------------------- opponents
     BotSkills.forEach((skill, index) => {
       const botSpawn = baked.definition.spawnPoints[index + 1] ?? spawn;
+      const botKart = KartPresets[(index + 1) % KartPresets.length]!;
       const visual = createKart(this.scene, `bot-${index}`, {
         body: Color3.FromHexString(["#4db7ff", "#ff7b2f", "#8f5cff"][index] ?? "#4db7ff"),
         accent: Color3.FromHexString(["#ffdd45", "#7dffef", "#f7f2e8"][index] ?? "#ffdd45"),
@@ -265,8 +331,12 @@ export class GameRuntime {
         skin: Color3.FromHexString(index === 2 ? "#70462e" : "#efb087"),
       }, true, {
         character: CharacterPresets[(index + 1) % CharacterPresets.length]!,
-        kart: KartPresets[(index + 1) % KartPresets.length]!,
+        kart: botKart,
         quality: quality === "HIGH" || quality === "ULTRA" ? "MEDIUM" : "LOW",
+        // A bot's wrap is applied only if the preset names one that is already resident. Fetching
+        // three more liveries to dress the opposition would put real seconds on the loading screen
+        // for karts the player mostly sees from behind.
+        wrap: catalog?.wrapTexture(botKart.livery ?? "NONE") ?? null,
       });
       // Only the player casts into the shadow map on lower tiers; four full karts of casters was one
       // of the measured problems with the V4 scene.
@@ -306,8 +376,48 @@ export class GameRuntime {
     };
   }
 
+  /**
+   * Boots a race: engine, scene, asset download, then the world.
+   *
+   * The await is the point. Materials are created synchronously during `buildTrack`, so every
+   * texture they might use has to be resident first; loading them afterwards would leave the first
+   * race of a session running on the procedural fallback while the files sat unused in cache.
+   */
   static async create(canvas: HTMLCanvasElement, options: GameRuntimeOptions): Promise<GameRuntime> {
-    return new GameRuntime(canvas, options);
+    const device = getDeviceReport();
+    const quality = qualityForProfile(device.profile);
+    const mobile = device.profile === "LOW" || window.matchMedia("(pointer: coarse)").matches;
+
+    const engine = new Engine(canvas, quality !== "LOW", {
+      antialias: quality !== "LOW",
+      adaptToDeviceRatio: true,
+      preserveDrawingBuffer: false,
+      powerPreference: "high-performance",
+    });
+    const hardwareScaling = getHardwareScalingLevel(device.profile);
+    engine.setHardwareScalingLevel(hardwareScaling);
+
+    const scene = new Scene(engine);
+    scene.skipPointerMovePicking = true;
+
+    options.onProgress?.({ loaded: 0, total: 1, label: "Catálogo de assets" });
+    const catalog = await AssetCatalog.load();
+
+    if (catalog) {
+      const theme = options.trackDefinition.baked.blueprint.theme;
+      const livery = options.kartDefinition.livery ?? "NONE";
+      const ids = assetIdsForRace(catalog, theme, livery);
+      await catalog.preload(scene, ids, (loaded, total, id) => {
+        options.onProgress?.({ loaded, total, label: labelForAsset(id) });
+      });
+    } else {
+      // Not an error: the procedural generator covers every surface. Worth saying out loud, though,
+      // because "the game looks flatter than it should" is otherwise a mystery.
+      console.warn("[assets] manifest unavailable; falling back to procedural textures");
+    }
+
+    options.onProgress?.({ loaded: 1, total: 1, label: "Construyendo circuito" });
+    return new GameRuntime(options, { engine, scene, quality, mobile, hardwareScaling, catalog });
   }
 
   start(): void {
@@ -371,6 +481,7 @@ export class GameRuntime {
     this.instrumentation.dispose();
     this.vfx.dispose();
     this.track.dispose();
+    this.catalog?.dispose();
     this.scene.dispose();
     this.engine.dispose();
   }

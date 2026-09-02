@@ -227,6 +227,43 @@ contenido.
 
 ---
 
+### ETAPA 3d — ASSETS HORNEADOS E INTEGRADOS
+
+Los cubos y los colores planos se sustituyen por ficheros de imagen reales. 121 PNG en
+`apps/web/public/assets`, 10,0 MB en total, con manifiesto generado desde el disco.
+
+**Lo horneado** — 29 materiales × 3 mapas (base color, normal, roughness), 21 decals RGBA en 7
+familias, 7 liveries de kart, 6 panoramas de circuito.
+
+**Lo integrado** — 91 de los 121 ficheros son alcanzables desde código, medido por
+`tools/assetgen/audit.mjs` leyendo el fuente:
+
+- `AssetCatalog` lee el manifiesto y precarga con **progreso medido**, no simulado;
+- `MaterialLibrary` toma normal y roughness del horno para todas las clases, y el base color donde
+  un tema lo nombra; el generador procedural queda como fallback real y comprobado;
+- `BackdropDome` pone el panorama del circuito detrás de la pista — antes era un color plano;
+- `DecalScatter` proyecta tinta, suciedad y marcas de neumático sobre la calzada;
+- `KartBuilder` acepta livery; `LiveryId` tiene 8 valores y un control en el garaje que se ve en la
+  vista previa.
+
+**Costuras de los panoramas, resueltas.** Cuatro de los seis fondos tenían una costura vertical real
+en el punto de cierre: 9 a 17 de diferencia media frente a un percentil 97 interior de 3 a 8. La
+causa no era el ruido —que ya era periódico— sino que **todas** las características periódicas
+(cerchas, bahías de estanterías, juntas de máquina, escalones de silueta) tenían su borde de celda
+exactamente en u = 0, de modo que la columna de cierre era la única de la imagen donde cambiaban
+todas a la vez. El helper `cell()` desplaza la fase de cada una: medido después, 0,00.
+
+**Honestidad del manifiesto.** Escribía `status: "integrated"` en las 121 entradas mientras el juego
+dibujaba todo procedimentalmente. Ahora escribe `status: "baked"` y la accesibilidad se deriva
+aparte. Los 30 ficheros no referenciados se declaran como tales en `ART_DIRECTION.md` §11.
+
+**Tests** — 266 en `apps/web` (antes 249): costuras contra un control interior, alfa de borde,
+rango por canal, validez de los normal maps, correspondencia manifiesto↔disco en ambos sentidos,
+y —nuevo— que cada id que el código puede nombrar existe en el manifiesto, y que el fallback
+procedural produce materiales completos con cero texturas residentes.
+
+---
+
 ## IN PROGRESS
 
 ### ETAPA 4 — T-SHIRT MEGASTORE (GOLD STANDARD)
@@ -237,7 +274,9 @@ zona cajas → salto sobre tienda → meta) y que reciba sus hero assets.
 
 - [ ] Blueprint autorado con la ruta del brief
 - [ ] 3 hero assets (pared de camisetas, escalera central, caja registradora gigante)
-- [ ] Capas de suelo del art bible (§4.4) y decals de diseño en camisetas
+- [x] Capas de suelo con material horneado (`mat_floortile_store`, `mat_wood_store`) y decals de
+      suelo proyectados (marcas, suciedad, pegatinas)
+- [ ] Decals de diseño sobre las camisetas de los expositores
 - [ ] IBL propio y ajuste de las 7 zonas de luz sobre el circuito final
 - [ ] Bucle de revisión visual: 10 capturas por vuelta, corregir, repetir
 

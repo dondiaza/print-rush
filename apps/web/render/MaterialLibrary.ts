@@ -1,4 +1,5 @@
 import { Color3, DynamicTexture, PBRMaterial, Scene, StandardMaterial, Texture } from "@babylonjs/core";
+import type { AssetCatalog } from "./AssetCatalog";
 
 /**
  * MATERIAL LIBRARY V5.
@@ -8,12 +9,20 @@ import { Color3, DynamicTexture, PBRMaterial, Scene, StandardMaterial, Texture }
  * reflect. Metal, fabric, cardboard and floor all responded to light identically. That is the single
  * largest reason the game read as a prototype.
  *
- * Every texture here is generated procedurally into a canvas at startup and cached. That choice is
- * deliberate: the project ships as a static export, so downloading a texture set would add megabytes
- * and a loading screen. Procedural generation costs a few milliseconds per class, produces real
- * albedo, normal and roughness maps, and means a material can be re-tuned by changing a number.
+ * Textures come from two places now, in this order:
  *
- * The fifteen classes and their parameters are normative — see `docs/ART_BIBLE_V5.md` section 4.
+ *  1. **The baked files** in `public/assets`, via `AssetCatalog`. Real PNGs on disk, validated for
+ *     seams and for not being flat, and replaceable by an artist or an image model without touching
+ *     code. Normal and roughness maps are taken from the bake for *every* class, because those two
+ *     maps are colour-independent — the surface behaviour is the same whether the wall is magenta or
+ *     grey. A baked *base colour* is used only when a caller names one, so a theme's own `color`
+ *     never becomes dead configuration.
+ *  2. **The procedural generator** below, unchanged, as the fallback. If the manifest is missing or a
+ *     download fails, every surface still gets albedo variation and a derived normal map. Losing the
+ *     bake costs fidelity, not the race.
+ *
+ * The fifteen classes and their parameters are normative — see `docs/ART_BIBLE_V5.md` section 4, and
+ * `docs/ART_DIRECTION.md` for how the baked set maps onto them.
  */
 
 export type MaterialClass =
@@ -329,6 +338,40 @@ export type MaterialRequest = {
   seed?: number;
   /** Overrides the class emissive strength. */
   emissive?: number;
+  /**
+   * Base id of a baked material whose *base colour* should be used, e.g. `mat_concrete_warehouse`.
+   *
+   * When the catalog has it, the file defines the colour and `color` becomes the fallback for when
+   * it does not. Leave it unset to keep the procedural grey-and-tint path, which is what props want:
+   * a hundred cardboard boxes in six colours share one texture and six materials.
+   */
+  texture?: string;
+};
+
+/**
+ * Class to baked material base id, for the normal and roughness maps that apply regardless of colour.
+ *
+ * Explicit rather than a lowercase transform of the class name, because it is a mapping between two
+ * independently chosen vocabularies and three of them do not line up (`PAINTED_METAL` to
+ * `paintedmetal`, `FLOOR_TILE` to `floortile`). `null` means the bake has no such class: GLASS and
+ * NEON are smooth and emissive respectively, so a surface map would only add cost.
+ */
+const BAKED_DEFAULT: Record<MaterialClass, string | null> = {
+  FABRIC: "mat_fabric_white",
+  CARDBOARD: "mat_cardboard_default",
+  PAINTED_METAL: "mat_paintedmetal_press",
+  RAW_METAL: "mat_rawmetal_default",
+  RUBBER: "mat_rubber_default",
+  PLASTIC: "mat_plastic_pallet",
+  GLASS: null,
+  WOOD: "mat_wood_desk",
+  CONCRETE: "mat_concrete_default",
+  INK: "mat_ink_violet",
+  PAPER: "mat_paper_default",
+  SCREEN: null,
+  NEON: null,
+  ASPHALT: "mat_asphalt_default",
+  FLOOR_TILE: "mat_floortile_store",
 };
 
 /**
@@ -339,22 +382,42 @@ export type MaterialRequest = {
 export class MaterialLibrary {
   private readonly cache = new Map<string, PBRMaterial>();
   private readonly textures = new Map<string, { albedo: DynamicTexture; normal: DynamicTexture | null }>();
+  /**
+   * Baked textures re-scaled for one tiling.
+   *
+   * `uScale` lives on the texture, not on the material, so two materials that share a texture cannot
+   * tile it differently — the second one to be created silently retunes the first. Cloning a
+   * `Texture` reuses the already-uploaded GPU image and only allocates a new sampler wrapper, so
+   * this is cheap and it is the only correct answer.
+   */
+  private readonly scaled = new Map<string, Texture>();
+  /** Counts baked textures actually bound, so the performance lab can report bake vs fallback. */
+  private bakedBindings = 0;
 
-  constructor(private readonly scene: Scene, private readonly quality: MaterialQuality = "HIGH") {}
+  constructor(
+    private readonly scene: Scene,
+    private readonly quality: MaterialQuality = "HIGH",
+    private readonly catalog: AssetCatalog | null = null,
+  ) {}
 
   get size(): number {
     return this.cache.size;
   }
 
-  /** Number of generated textures. Reported by the performance lab. */
+  /** Number of procedurally generated textures. Reported by the performance lab. */
   get textureCount(): number {
     return this.textures.size;
+  }
+
+  /** How many baked maps were bound. Zero means every surface fell back to the generator. */
+  get bakedTextureCount(): number {
+    return this.bakedBindings;
   }
 
   get(request: MaterialRequest): PBRMaterial {
     const spec = SPECS[request.materialClass];
     const tile = request.tile ?? spec.tile;
-    const key = `${request.materialClass}|${request.color}|${tile}|${request.seed ?? 0}|${request.emissive ?? ""}`;
+    const key = `${request.materialClass}|${request.color}|${tile}|${request.seed ?? 0}|${request.emissive ?? ""}|${request.texture ?? ""}`;
     const cached = this.cache.get(key);
     if (cached) return cached;
 
@@ -383,19 +446,46 @@ export class MaterialLibrary {
 
     // NEON and SMOOTH classes gain nothing from a texture, so they stay untextured and cheap.
     if (spec.pattern !== "SMOOTH" || spec.bump > 0) {
-      const maps = this.textureFor(request.materialClass, request.seed ?? 0);
-      if (maps) {
-        const scale = 1 / tile;
-        maps.albedo.uScale = scale;
-        maps.albedo.vScale = scale;
-        material.albedoTexture = maps.albedo;
-        // The albedo texture is greyscale variation; the colour still comes from albedoColor.
+      const scale = 1 / tile;
+      const bakedId = request.texture ?? BAKED_DEFAULT[request.materialClass];
+      const bakedBase = request.texture ? this.bakedMap(`${request.texture}_basecolor`, scale) : null;
+      const bakedNormal = bakedId ? this.bakedMap(`${bakedId}_normal`, scale) : null;
+      const bakedRoughness = bakedId ? this.bakedMap(`${bakedId}_roughness`, scale) : null;
+
+      if (bakedBase) {
+        // The file is authoritative for colour, so the tint goes to white rather than multiplying
+        // the two together and darkening everything twice.
+        material.albedoColor = Color3.White();
+        material.albedoTexture = bakedBase;
         material.useAlphaFromAlbedoTexture = false;
-        if (maps.normal && this.quality !== "LOW") {
-          maps.normal.uScale = scale;
-          maps.normal.vScale = scale;
-          material.bumpTexture = maps.normal;
-          material.invertNormalMapY = true;
+      }
+
+      if (bakedRoughness && this.quality !== "LOW") {
+        // A greyscale PNG arrives with R = G = B, so the green channel carries roughness. Metalness
+        // stays the scalar from the class spec — the bake writes no metalness map, and pretending a
+        // roughness map is an ORM would put roughness into the metalness slot.
+        material.metallicTexture = bakedRoughness;
+        material.useRoughnessFromMetallicTextureAlpha = false;
+        material.useRoughnessFromMetallicTextureGreen = true;
+        material.useMetallnessFromMetallicTextureBlue = false;
+        material.useAmbientOcclusionFromMetallicTextureRed = false;
+      }
+
+      // A procedural albedo still earns its place when no baked base colour was named: it is grey
+      // variation that the theme's own colour tints, which is how one texture serves many props.
+      const needsProcedural = !bakedBase || (!bakedNormal && this.quality !== "LOW");
+      const maps = needsProcedural ? this.textureFor(request.materialClass, request.seed ?? 0, tile) : null;
+      if (maps && !bakedBase) {
+        material.albedoTexture = maps.albedo;
+        material.useAlphaFromAlbedoTexture = false;
+      }
+
+      if (this.quality !== "LOW") {
+        const normal = bakedNormal ?? maps?.normal ?? null;
+        if (normal) {
+          material.bumpTexture = normal;
+          // The baked maps are written in the OpenGL convention (green up); the derived ones invert.
+          material.invertNormalMapY = normal === bakedNormal ? false : true;
         }
       }
     }
@@ -404,9 +494,45 @@ export class MaterialLibrary {
     return material;
   }
 
-  /** Textures are shared across every colour of a class, which is where most of the saving is. */
-  private textureFor(materialClass: MaterialClass, seed: number): { albedo: DynamicTexture; normal: DynamicTexture | null } | null {
-    const key = `${materialClass}|${seed}`;
+  /**
+   * A baked texture, cloned and scaled for this tiling, or null if it was never loaded.
+   *
+   * Null is the normal case for anything the bake does not cover and for a failed download, and it
+   * is why every caller keeps its procedural path.
+   */
+  private bakedMap(id: string, scale: number): Texture | null {
+    if (!this.catalog) return null;
+    const key = `${id}|${scale}`;
+    const cached = this.scaled.get(key);
+    if (cached) return cached;
+
+    const source = this.catalog.texture(id);
+    if (!source) return null;
+
+    const clone = source.clone();
+    clone.uScale = scale;
+    clone.vScale = scale;
+    clone.wrapU = Texture.WRAP_ADDRESSMODE;
+    clone.wrapV = Texture.WRAP_ADDRESSMODE;
+    clone.gammaSpace = source.gammaSpace;
+    this.scaled.set(key, clone);
+    this.bakedBindings += 1;
+    return clone;
+  }
+
+  /**
+   * Textures are shared across every colour of a class, which is where most of the saving is.
+   *
+   * Keyed by tiling as well, because `uScale` is a property of the texture: a road at 6 m per tile
+   * and a wall at 3 m per tile cannot share one `DynamicTexture` without the second silently
+   * retuning the first. A class is normally used at one or two tilings, so this costs little.
+   */
+  private textureFor(
+    materialClass: MaterialClass,
+    seed: number,
+    tile: number,
+  ): { albedo: DynamicTexture; normal: DynamicTexture | null } | null {
+    const key = `${materialClass}|${seed}|${tile}`;
     const cached = this.textures.get(key);
     if (cached) return cached;
 
@@ -422,6 +548,8 @@ export class MaterialLibrary {
     albedo.wrapU = Texture.WRAP_ADDRESSMODE;
     albedo.wrapV = Texture.WRAP_ADDRESSMODE;
     albedo.anisotropicFilteringLevel = this.quality === "LOW" ? 1 : 4;
+    albedo.uScale = 1 / tile;
+    albedo.vScale = 1 / tile;
 
     const normal =
       spec.bump > 0 && this.quality !== "LOW"
@@ -430,6 +558,8 @@ export class MaterialLibrary {
     if (normal) {
       normal.wrapU = Texture.WRAP_ADDRESSMODE;
       normal.wrapV = Texture.WRAP_ADDRESSMODE;
+      normal.uScale = 1 / tile;
+      normal.vScale = 1 / tile;
     }
 
     const maps = { albedo, normal };
@@ -454,7 +584,10 @@ export class MaterialLibrary {
       maps.albedo.dispose();
       maps.normal?.dispose();
     });
+    // The clones are disposed; the catalog owns the sources and disposes those itself.
+    this.scaled.forEach((texture) => texture.dispose());
     this.cache.clear();
     this.textures.clear();
+    this.scaled.clear();
   }
 }

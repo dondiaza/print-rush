@@ -17,7 +17,8 @@
     "typecheck": "npm run typecheck -w @print-rush/game-core && npm run typecheck -w @print-rush/3d-factory && npm run typecheck -w @print-rush/game-server && npm run typecheck -w @print-rush/web",
     "test": "npm run test -w @print-rush/game-core && npm run test -w @print-rush/3d-factory && npm run test -w @print-rush/web",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "build:vercel": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/web && node scripts/vercel-package.mjs"
+    "build:vercel": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/web && node scripts/vercel-package.mjs",
+    "assets:build": "node tools/assetgen/index.mjs"
   },
   "engines": {
     "node": ">=22"

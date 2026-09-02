@@ -3,6 +3,7 @@ import {
   Mesh,
   PBRMaterial,
   Scene,
+  Texture,
   TransformNode,
   Vector2,
   Vector3,
@@ -43,6 +44,11 @@ export type KartVisual = {
   steeringWheel: Mesh | null;
   /** Suspension travel is applied to these, so a landing visibly compresses. */
   restHeights: number[];
+  /**
+   * The bodywork material. Exposed so a livery that arrives after the kart was built can be applied
+   * without rebuilding it — which is what the garage preview does while its wrap downloads.
+   */
+  paint: PBRMaterial;
 };
 
 type KartMaterials = {
@@ -62,18 +68,31 @@ type KartMaterials = {
  */
 const materialCache = new WeakMap<Scene, Map<string, KartMaterials>>();
 
-function kartMaterials(scene: Scene, definition: KartDefinition): KartMaterials {
+function kartMaterials(
+  scene: Scene,
+  definition: KartDefinition,
+  wrap: Texture | null,
+): KartMaterials {
   let perScene = materialCache.get(scene);
   if (!perScene) {
     perScene = new Map();
     materialCache.set(scene, perScene);
   }
-  const key = `${definition.primaryColor}|${definition.secondaryColor}|${definition.rimColor}|${definition.finish}`;
+  // The wrap belongs in the key: two karts that differ only by livery must not share a paint
+  // material, or the second one silently repaints the first.
+  const key = `${definition.primaryColor}|${definition.secondaryColor}|${definition.rimColor}|${definition.finish}|${wrap?.name ?? "none"}`;
   const cached = perScene.get(key);
   if (cached) return cached;
 
   const paint = new PBRMaterial(`kart-paint-${key}`, scene);
   paint.albedoColor = Color3.FromHexString(definition.primaryColor);
+  if (wrap) {
+    // The livery is the colour now, so the tint goes to white rather than multiplying into the
+    // artwork and muddying it. `primaryColor` still drives the accent panels and the fallback, so
+    // choosing a colour is never a no-op even with a wrap applied.
+    paint.albedoTexture = wrap;
+    paint.albedoColor = Color3.White();
+  }
   paint.metallic = definition.finish === "METALLIC" ? 0.7 : definition.finish === "PEARL" ? 0.35 : 0.05;
   paint.roughness = definition.finish === "MATTE" ? 0.82 : definition.finish === "GLOSS" ? 0.24 : 0.34;
   // Clearcoat is what makes painted bodywork read as painted rather than as coloured plastic. The
@@ -275,8 +294,10 @@ export function buildKart(
   definition: KartDefinition,
   name: string,
   quality: RuntimeQuality = "HIGH",
+  /** Baked livery texture, already loaded. Null paints the bodywork flat. */
+  wrap: Texture | null = null,
 ): KartVisual {
-  const materials = kartMaterials(scene, definition);
+  const materials = kartMaterials(scene, definition, wrap);
   const detailed = quality === "HIGH" || quality === "ULTRA";
   const wheelSegments = quality === "LOW" ? 12 : quality === "MEDIUM" ? 18 : 28;
   const root = new TransformNode(name, scene);
@@ -649,7 +670,7 @@ export function buildKart(
     }
   }
 
-  return { root, wheels, steeringWheel, restHeights };
+  return { root, wheels, steeringWheel, restHeights, paint: materials.paint };
 }
 
 /**

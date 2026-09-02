@@ -15,6 +15,9 @@ import { buildHero, heroesForTheme } from "@/render/HeroAssets";
 import { beveledBox, ellipsoid, lofted, revolve, tube } from "@/render/Geometry";
 import { LightingRig, zonesForTheme, type QualityLevel } from "@/render/LightingRig";
 import { buildRoadSurface, buildWallSurface, curvatureAt, frameAt } from "@/render/RoadMesh";
+import { createBackdrop, type Backdrop } from "@/render/BackdropDome";
+import type { AssetCatalog } from "@/render/AssetCatalog";
+import { scatterDecals, type Decals } from "@/render/DecalScatter";
 
 /**
  * TRACK BUILDER V5.
@@ -32,9 +35,21 @@ import { buildRoadSurface, buildWallSurface, curvatureAt, frameAt } from "@/rend
  *  - everything repeated is instanced with per-instance colour, so a hundred boxes cost one material.
  */
 
+/**
+ * A surface's material.
+ *
+ * `texture` names a baked material from `assets.manifest.json` whose base colour, normal and
+ * roughness maps should be used as a set. It is optional on purpose: where it is absent the surface
+ * still gets the class's baked normal and roughness and takes its colour from `color`, which is the
+ * path every prop uses. `color` therefore stays meaningful everywhere, and a theme opts into a baked
+ * base colour only where a specific one exists — there is no invented id here, and a name the
+ * manifest does not carry falls back rather than failing.
+ */
+type SurfaceVisual = { materialClass: MaterialClass; color: string; texture?: string };
+
 export type ThemeVisuals = {
-  road: { materialClass: MaterialClass; color: string };
-  wall: { materialClass: MaterialClass; color: string };
+  road: SurfaceVisual;
+  wall: SurfaceVisual;
   kerbLight: string;
   kerbDark: string;
   accentA: string;
@@ -47,8 +62,8 @@ export type ThemeVisuals = {
 
 const THEME_VISUALS: Record<string, ThemeVisuals> = {
   FLAGSHIP: {
-    road: { materialClass: "FLOOR_TILE", color: "#6e6259" },
-    wall: { materialClass: "WOOD", color: "#c98a52" },
+    road: { materialClass: "FLOOR_TILE", color: "#6e6259", texture: "mat_floortile_store" },
+    wall: { materialClass: "WOOD", color: "#c98a52", texture: "mat_wood_store" },
     kerbLight: "#f7f2e8",
     kerbDark: "#ff3da6",
     accentA: "#ff3da6",
@@ -66,8 +81,8 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   WAREHOUSE: {
-    road: { materialClass: "CONCRETE", color: "#4a4e54" },
-    wall: { materialClass: "PAINTED_METAL", color: "#5a6068" },
+    road: { materialClass: "CONCRETE", color: "#4a4e54", texture: "mat_concrete_warehouse" },
+    wall: { materialClass: "PAINTED_METAL", color: "#5a6068", texture: "mat_paintedmetal_racking" },
     kerbLight: "#ffc02e",
     kerbDark: "#3a3f49",
     accentA: "#ffc02e",
@@ -84,8 +99,8 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   PRINT_FACTORY: {
-    road: { materialClass: "CONCRETE", color: "#2b2732" },
-    wall: { materialClass: "PAINTED_METAL", color: "#3a3f49" },
+    road: { materialClass: "CONCRETE", color: "#2b2732", texture: "mat_concrete_factory" },
+    wall: { materialClass: "PAINTED_METAL", color: "#3a3f49", texture: "mat_paintedmetal_press" },
     kerbLight: "#ffd43b",
     kerbDark: "#8f5cff",
     accentA: "#8f5cff",
@@ -102,8 +117,8 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   OFFICE: {
-    road: { materialClass: "FLOOR_TILE", color: "#8c8378" },
-    wall: { materialClass: "WOOD", color: "#a2764b" },
+    road: { materialClass: "FLOOR_TILE", color: "#8c8378", texture: "mat_floortile_office" },
+    wall: { materialClass: "WOOD", color: "#a2764b", texture: "mat_wood_desk" },
     kerbLight: "#f7f2e8",
     kerbDark: "#65d8ff",
     accentA: "#65d8ff",
@@ -120,7 +135,10 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   MANGA: {
-    road: { materialClass: "FLOOR_TILE", color: "#252036" },
+    // Carpet, not tile: a convention hall floor is carpeted, and it is the one surface here that
+    // should look soft. The wall keeps no named base colour, so it takes the theme's own dark violet
+    // over the class's baked normal and roughness — the fallback path, exercised in a shipped circuit.
+    road: { materialClass: "FLOOR_TILE", color: "#252036", texture: "mat_carpet_manga" },
     wall: { materialClass: "PAINTED_METAL", color: "#1b1630" },
     kerbLight: "#ff3da6",
     kerbDark: "#8f5cff",
@@ -157,6 +175,8 @@ export type BuiltTrack = {
   baked: BakedTrack;
   lighting: LightingRig;
   materials: MaterialLibrary;
+  backdrop: Backdrop;
+  decals: Decals;
   boostPads: BuiltFeature[];
   jumpPads: BuiltFeature[];
   itemBoxes: BuiltFeature[];
@@ -183,13 +203,15 @@ export type BuildTrackOptions = {
   quality: QualityLevel;
   /** Reduces trackside prop density on weaker devices. 1 is full. */
   density?: number;
+  /** Baked assets, already preloaded. Null builds the circuit from the procedural generator alone. */
+  catalog?: AssetCatalog | null;
 };
 
 export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackOptions): BuiltTrack {
   const theme = baked.blueprint.theme;
   const visuals = visualsForTheme(theme);
   const materialQuality: MaterialQuality = options.quality;
-  const materials = new MaterialLibrary(scene, materialQuality);
+  const materials = new MaterialLibrary(scene, materialQuality, options.catalog ?? null);
   const nodes = baked.definition.nodes;
   const density = options.density ?? 1;
   const random = seededRandom(hashString(baked.blueprint.id));
@@ -201,10 +223,34 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     theme,
   });
 
+  // ------------------------------------------------------------- backdrop
+  // Before the road, so that if the panorama is missing the fallback colour is already decided and
+  // there is never a frame with nothing behind the track.
+  const backdrop = createBackdrop(scene, theme, options.catalog ?? null, visuals.structureColor);
+
   // ------------------------------------------------------------------ road
   const road = buildRoadSurface(scene, nodes, "track-road", { tileLength: 8, shoulder: 0.4 });
   road.material = materials.get({ ...visuals.road, tile: 6 });
   road.receiveShadows = true;
+
+  // Wear on the road: ink, dirt, tyre marks. Placed on the finished surface so the projection picks
+  // up its banking, and seeded from the same generator as the props so a circuit dresses identically
+  // every time it is built.
+  const decals = scatterDecals(scene, road, theme, options.quality, options.catalog ?? null, random, (fraction) => {
+    const index = Math.floor(fraction * nodes.length) % nodes.length;
+    const node = nodes[index];
+    if (!node) return null;
+    const frame = frameAt(nodes, index);
+    // `frameAt` works in the XZ plane and returns the left normal, so the surface normal is rebuilt
+    // here from the node's banking — a decal laid flat across a banked corner would float off it.
+    const bank = node.banking;
+    const up = new Vector3(frame.nx * Math.sin(bank), Math.cos(bank), frame.nz * Math.sin(bank)).normalize();
+    return {
+      position: new Vector3(node.x, node.y, node.z),
+      up,
+      side: new Vector3(frame.nx, 0, frame.nz),
+    };
+  });
 
   // A painted racing line. It tells the player where to be before any HUD does, and it gives the
   // ground a feature that passes at speed, which is half of speed perception.
@@ -322,7 +368,14 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   const boostMaterial = materials.glow("boost-pad", visuals.accentB, 1.2);
   const itemMaterialA = materials.glow("item-a", visuals.accentA, 0.9);
   const itemMaterialB = materials.glow("item-b", visuals.accentB, 0.9);
-  const hazardMaterial = materials.get({ materialClass: "PAINTED_METAL", color: visuals.accentA });
+  // Safety yellow rather than the theme accent: a hazard reads faster when it looks like a
+  // hazard everywhere, and the baked stripe was made for this. The theme accent still
+  // telegraphs the hazard through its warning light and its VFX.
+  const hazardMaterial = materials.get({
+    materialClass: "PAINTED_METAL",
+    color: visuals.accentA,
+    texture: "mat_safety_yellow",
+  });
 
   for (const feature of baked.blueprint.features) {
     if (feature.kind === "BOOST") {
@@ -637,6 +690,8 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     baked,
     lighting,
     materials,
+    backdrop,
+    decals,
     boostPads,
     jumpPads,
     itemBoxes,
@@ -647,6 +702,8 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     dispose: () => {
       lighting.dispose();
       materials.dispose();
+      backdrop.dispose();
+      decals.dispose();
       road.dispose();
       walls.forEach((wall) => wall.dispose());
       kerbSource.dispose();

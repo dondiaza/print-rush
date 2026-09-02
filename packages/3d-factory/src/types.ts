@@ -71,6 +71,24 @@ export type BeardStyle = "NONE" | "STUBBLE" | "MUSTACHE" | "GOATEE" | "SHORT" | 
 export type GlassesStyle = "NONE" | "RECTANGULAR" | "ROUND" | "LARGE" | "THIN" | "SUNGLASSES";
 export type ShirtDesignId = "NONE" | "INK_BOLT" | "THREAD_WAVE" | "PRINT_SKULL" | "PACKAGE_CAT" | "CUSTOM";
 
+/**
+ * A baked livery wrapped around the bodywork.
+ *
+ * Each value except `NONE` corresponds to a file in `apps/web/public/assets/common/wraps`, and
+ `apps/web/tests/assets.test.ts` asserts that correspondence, so this list cannot drift into
+ * naming a wrap that was never baked. `NONE` is flat paint in `primaryColor`, which is what the
+ * kart looked like before the wraps existed and what it falls back to if a download fails.
+ */
+export type LiveryId =
+  | "NONE"
+  | "PAMPLING_RACING"
+  | "SCREENPRINT_CMYK"
+  | "COMIC"
+  | "NEON"
+  | "RETRO"
+  | "WAREHOUSE_EXPRESS"
+  | "WITUKA_SURF";
+
 export type KartDefinition = {
   schemaVersion: 2;
   generatorVersion: "2.0.0";
@@ -87,6 +105,12 @@ export type KartDefinition = {
   secondaryColor: string;
   rimColor: string;
   decal: "NONE" | "BOLT" | "STRIPES" | "INK" | "NUMBER";
+  /**
+   * Baked livery for the bodywork. Optional because karts saved before wraps existed do not
+   * carry it, and a stored kart must keep loading; every read site treats an absent value as
+   * `"NONE"`.
+   */
+  livery?: LiveryId;
   number: number;
   finish: "MATTE" | "GLOSS" | "METALLIC" | "PEARL";
   compatibility: { driverScale: number; seatHeight: number; handTarget: number };

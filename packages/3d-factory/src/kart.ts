@@ -47,5 +47,12 @@ export function randomKart(seed: number, name = "Factory Kart"): KartDefinition 
   kart.decal = pick(["NONE", "BOLT", "STRIPES", "INK", "NUMBER"] as const, random);
   kart.number = Math.floor(random.range(1, 100));
   kart.finish = pick(["MATTE", "GLOSS", "METALLIC", "PEARL"] as const, random);
+  // Drawn from the seed like everything else, so the grid is four different liveries and a race
+  // replays identically. `NONE` stays in the pool: flat paint is a legitimate look, and keeping it
+  // reachable means the no-wrap path is exercised by the presets rather than only by a fallback.
+  kart.livery = pick(
+    ["NONE", "PAMPLING_RACING", "SCREENPRINT_CMYK", "COMIC", "NEON", "RETRO", "WAREHOUSE_EXPRESS", "WITUKA_SURF"] as const,
+    random,
+  );
   return normalizeKart(kart);
 }

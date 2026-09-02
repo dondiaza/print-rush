@@ -8,6 +8,8 @@ import {
 import type { CharacterDefinition, KartDefinition, RuntimeQuality } from "@print-rush/3d-factory";
 import { animateGeneratedCharacter, createGeneratedCharacter } from "./GeneratedCharacter";
 import { createGeneratedKart } from "./GeneratedKart";
+import { AssetCatalog } from "@/render/AssetCatalog";
+import { kartVisualOf } from "@/game/createKart";
 
 type PreviewProps = {
   character?: CharacterDefinition;
@@ -58,6 +60,27 @@ export function FactoryPreview({ character, kart, quality = "HIGH", className = 
     rimMaterial.albedoColor = Color3.FromHexString("#ff3da6");
     rimMaterial.emissiveColor = Color3.FromHexString("#ff3da6").scale(.5);
     rim.material = rimMaterial;
+    // The livery, applied once it arrives.
+    //
+    // Deliberately after the kart is on screen rather than before: the garage should draw instantly
+    // and gain its wrap a moment later, not hold a blank canvas while a PNG downloads. `paint` on
+    // the visual is the handle that makes re-skinning possible without rebuilding the geometry.
+    let disposed = false;
+    const livery = kart?.livery ?? "NONE";
+    if (livery !== "NONE") {
+      void (async () => {
+        const catalog = await AssetCatalog.load();
+        const asset = catalog?.wrap(livery);
+        if (disposed || !catalog || !asset) return;
+        await catalog.preload(scene, [asset.id]);
+        const texture = catalog.texture(asset.id);
+        const visual = kartVisualOf(root);
+        if (disposed || !texture || !visual) return;
+        visual.paint.albedoTexture = texture;
+        visual.paint.albedoColor = Color3.White();
+      })();
+    }
+
     const start = performance.now();
     engine.runRenderLoop(() => {
       const time = (performance.now() - start) / 1000;
@@ -67,7 +90,7 @@ export function FactoryPreview({ character, kart, quality = "HIGH", className = 
     });
     const resize = () => engine.resize();
     window.addEventListener("resize", resize);
-    return () => { window.removeEventListener("resize", resize); scene.dispose(); engine.dispose(); };
+    return () => { disposed = true; window.removeEventListener("resize", resize); scene.dispose(); engine.dispose(); };
   }, [character, kart, quality]);
 
   return <canvas ref={canvasRef} className={`factory-preview ${className}`} aria-label={kart ? "Vista 3D del kart" : "Vista 3D del personaje"} />;

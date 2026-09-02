@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AllowedLaps } from "@print-rush/game-core";
-import { GameRuntime, type HudState, type RaceResult } from "@/game/GameRuntime";
+import { GameRuntime, type HudState, type LoadProgress, type RaceResult } from "@/game/GameRuntime";
 import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
 import { loadActiveTrack } from "@/factory/TrackFactory";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
@@ -54,12 +54,32 @@ const INITIAL_HUD: HudState = {
   maxSpeedKph: 0,
 };
 
+/**
+ * How far along the load is, 0..1.
+ *
+ * Returns 0 rather than 1 for an empty total: before the manifest is read there is nothing to
+ * divide by, and showing a full bar at that moment would be the exact lie this replaced.
+ */
+function loadFraction(progress: LoadProgress): number {
+  if (progress.total <= 0) return 0;
+  return Math.min(1, progress.loaded / progress.total);
+}
+
 export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
   const [hud, setHud] = useState<HudState>({ ...INITIAL_HUD, laps });
   const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
+  /**
+   * Measured download progress, not a timer.
+   *
+   * The screen this drives used to read "CARGANDO TALLER…" over a fixed sentence while the runtime
+   * built the world synchronously — it said the same thing whether loading took 200 ms or stalled
+   * forever. Now every step comes from an asset that actually settled, so a bar that stops moving
+   * means something is genuinely stuck, and the label says which kind of asset it is stuck on.
+   */
+  const [progress, setProgress] = useState<LoadProgress>({ loaded: 0, total: 0, label: "Iniciando motor" });
   const [error, setError] = useState<string | null>(null);
   const [autoAccelerate, setAutoAccelerate] = useState(false);
   const [showControls, setShowControls] = useState(false);
@@ -75,7 +95,8 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       hudRef.current = state;
       setHud(state);
     };
-    void GameRuntime.create(canvas, { laps, muted, onHud, onFinish, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
+    const onProgress = (state: LoadProgress): void => { if (active) setProgress(state); };
+    void GameRuntime.create(canvas, { laps, muted, onHud, onFinish, onProgress, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
       if (!active) { runtime.dispose(); return; }
       runtimeRef.current = runtime;
       runtime.start();
@@ -146,6 +167,22 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         .drift-cue.grade-miss { color: #ff7b7b; font-size: 26px; }
         .drift-cue.grade-tap { color: #f7f2e8; font-size: 22px; opacity: 0.85; }
         .drift-cue.grade-chain { color: #ff3da6; }
+        .load-bar {
+          margin-top: 18px;
+          height: 6px;
+          width: min(320px, 60vw);
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.14);
+          overflow: hidden;
+        }
+        .load-bar > span {
+          display: block;
+          height: 100%;
+          border-radius: 999px;
+          background: linear-gradient(90deg, #ff3da6, #65d8ff);
+          /* Eased so a burst of settled downloads reads as motion rather than as a jump. */
+          transition: width 180ms ease-out;
+        }
         @keyframes cue-pop {
           from { transform: translateX(-50%) scale(0.7); opacity: 0; }
           to { transform: translateX(-50%) scale(1); opacity: 1; }
@@ -154,7 +191,17 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       <canvas ref={canvasRef} className="race-canvas" />
       <div className="noise" aria-hidden="true" />
 
-      {loading && <div className="race-menu"><div className="race-menu-inner"><h2>CARGANDO TALLER…</h2><p>Preparando físicas, circuito y rivales.</p></div></div>}
+      {loading && (
+        <div className="race-menu">
+          <div className="race-menu-inner">
+            <h2>CARGANDO TALLER…</h2>
+            <p>{progress.label}{progress.total > 1 ? ` · ${progress.loaded}/${progress.total}` : ""}</p>
+            <div className="load-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(loadFraction(progress) * 100)}>
+              <span style={{ width: `${Math.round(loadFraction(progress) * 100)}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
       {debug && <DebugOverlay hudRef={hudRef} />}
       {error && <div className="race-menu"><div className="race-menu-inner"><h2>SIN MOTOR</h2><p>{error}</p><button className="cta-primary" onClick={onExit}>VOLVER</button></div></div>}
 

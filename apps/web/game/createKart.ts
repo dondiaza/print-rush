@@ -1,4 +1,4 @@
-import { Color3, Scene, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+import { Color3, Scene, StandardMaterial, Texture, TransformNode, Vector3 } from "@babylonjs/core";
 import { KartPresets, type CharacterDefinition, type KartDefinition, type RuntimeQuality } from "@print-rush/3d-factory";
 import { createGeneratedCharacter } from "@/factory/GeneratedCharacter";
 import { animateKart, buildKart, type KartVisual } from "@/render/KartBuilder";
@@ -12,7 +12,13 @@ import { animateKart, buildKart, type KartVisual } from "@/render/KartBuilder";
  */
 
 export type KartPalette = { body: Color3; accent: Color3; shirt: Color3; skin: Color3 };
-export type KartCustomization = { kart: KartDefinition; character: CharacterDefinition; quality?: RuntimeQuality };
+export type KartCustomization = {
+  kart: KartDefinition;
+  character: CharacterDefinition;
+  quality?: RuntimeQuality;
+  /** Baked livery texture for the bodywork. Null or absent paints it flat. */
+  wrap?: Texture | null;
+};
 
 /** Builds a `KartDefinition` from a loose palette, for callers that only want a colour. */
 function definitionFromPalette(palette: KartPalette): KartDefinition {
@@ -35,7 +41,7 @@ export function createKart(
 ): TransformNode {
   const quality = customization?.quality ?? "HIGH";
   const definition = customization?.kart ?? definitionFromPalette(palette);
-  const visual = buildKart(scene, definition, name, quality);
+  const visual = buildKart(scene, definition, name, quality, customization?.wrap ?? null);
   const root = visual.root;
   root.metadata = { ...root.metadata, kartVisual: visual, spin: 0 };
 
