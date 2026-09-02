@@ -39,6 +39,8 @@ type ManifestAsset = {
   usage: string;
   status: string;
   download: "always" | "track" | "kart";
+  frames?: Record<string, { x: number; y: number; width: number; height: number; u0?: number; v0?: number; u1?: number; v1?: number; cell?: number }>;
+  grid?: { cellWidth: number; cellHeight: number; columns: number; rows: number; count: number };
 };
 
 const manifest: { assets: ManifestAsset[]; totalBytes: number; counts: Record<string, number> } =
@@ -450,6 +452,52 @@ describe("asset integration", () => {
   });
 
   /**
+   * An atlas a circuit uses must be downloadable by that circuit.
+   *
+   * The same trap as the theme-texture rule, one level up, and it caught a real one: the hanging
+   * garments were baked into the store's set while three circuits placed them, so two of the three
+   * pointed at an atlas that is never fetched for them. Nothing would have surfaced it — the sprites
+   * simply would not have appeared, in a scene busy enough that nobody would notice which dressing
+   * was missing.
+   *
+   * A family placed by more than one theme therefore has to be shared.
+   */
+  it("never lets a circuit place a sprite family it cannot download", () => {
+    const scopeOf = new Map(manifest.assets.map((asset) => [asset.id, asset.circuit] as const));
+
+    // The placement tables, read out of the renderer rather than restated here.
+    const crowdBody = source.slice(source.indexOf("const FAMILY_BY_THEME"));
+    const crowdTable = crowdBody.slice(0, crowdBody.indexOf("};"));
+    const dressingBody = source.slice(source.indexOf("const DRESSING_BY_THEME"));
+    const dressingTable = dressingBody.slice(0, dressingBody.indexOf("};"));
+
+    /** theme -> families it places. */
+    const placed = new Map<string, string[]>();
+    for (const match of crowdTable.matchAll(/^\s*([A-Z_]+):\s*"([a-z_]+)"/gm)) {
+      placed.set(match[1]!, [...(placed.get(match[1]!) ?? []), match[2]!]);
+    }
+    for (const match of dressingTable.matchAll(/^\s{2}([A-Z_]+):\s*\[([\s\S]*?)\],?$/gm)) {
+      const families = [...match[2]!.matchAll(/family: "([a-z_]+)"/g)].map((entry) => entry[1]!);
+      placed.set(match[1]!, [...(placed.get(match[1]!) ?? []), ...families]);
+    }
+    expect(placed.size, "no sprite placement tables parsed").toBeGreaterThanOrEqual(4);
+
+    for (const [theme, families] of placed) {
+      const circuit = CIRCUIT_KEY_BY_THEME[theme];
+      expect(circuit, `${theme} has no circuit key`).toBeDefined();
+      for (const family of new Set(families)) {
+        const id = `sprite_${family}_atlas`;
+        expect(scopeOf.has(id), `${theme} places ${family}, which is not baked`).toBe(true);
+        const scope = scopeOf.get(id);
+        expect(
+          scope === undefined || scope === circuit,
+          `${theme} places ${family}, whose atlas belongs to ${scope} and is never downloaded here`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  /**
    * Every baked file is reachable.
    *
    * This started as a floor of 88 with thirty colour variants sitting unused, which was honest but
@@ -470,5 +518,136 @@ describe("asset integration", () => {
       `${unreferenced.length} baked files are unreachable from application code`,
     ).toEqual([]);
     expect(referenced.length).toBe(manifest.assets.length);
+  });
+});
+
+/**
+ * Atlases.
+ *
+ * Three properties decide whether an atlas is an asset or a liability, and none of them is visible
+ * without reading the pixels back:
+ *
+ *  - **Every frame has content.** A generator that silently drew nothing produces a frame that is
+ *    perfectly transparent, which looks identical to a frame that was never requested.
+ *  - **No frame touches its own edge.** Alpha at a frame's border is the halo the brief names: under
+ *    bilinear filtering it bleeds into the neighbour, and on a lone sprite it draws the bounding box.
+ *  - **The frames differ from each other.** Twenty-two icons that are all the same picture would
+ *    pass every other check here. This is the one that catches a broken shape composition.
+ */
+describe("atlases", () => {
+  const atlases = manifest.assets.filter((asset) => asset.frames !== undefined);
+
+  it("produced the icon, poster and sprite atlases", () => {
+    expect(atlases.length).toBeGreaterThanOrEqual(10);
+    expect(atlases.some((asset) => asset.id === "ui_icon_atlas")).toBe(true);
+    expect(atlases.filter((asset) => asset.category === "poster").length).toBe(5);
+    expect(atlases.filter((asset) => asset.category === "sprite").length).toBeGreaterThanOrEqual(4);
+  });
+
+  /** Pixel access into a frame, with the sheet's stride. */
+  function reader(asset: ManifestAsset) {
+    const image = load(asset);
+    const at = (frameX: number, frameY: number, x: number, y: number, channel: number): number =>
+      image.pixels[((frameY + y) * image.width + frameX + x) * image.channels + channel] as number;
+    return { image, at };
+  }
+
+  it.each(atlases.map((asset) => [asset.id, asset] as const))("%s fills every frame", (id, asset) => {
+    const { at } = reader(asset);
+    for (const [name, frame] of Object.entries(asset.frames!)) {
+      let opaque = 0;
+      for (let y = 0; y < frame.height; y += 2) {
+        for (let x = 0; x < frame.width; x += 2) {
+          if (at(frame.x, frame.y, x, y, 3) > 12) opaque += 1;
+        }
+      }
+      const coverage = opaque / ((frame.width / 2) * (frame.height / 2));
+      expect(coverage, `${id}/${name} coverage`).toBeGreaterThan(0.02);
+    }
+  });
+
+  /**
+   * Border alpha, on the alpha-cut categories only.
+   *
+   * A poster is an opaque rectangle by design — it is a printed sheet on a wall — so its border is
+   * legitimately solid. An icon or a sprite is a cut-out and must fade to nothing before its edge.
+   */
+  it.each(
+    atlases.filter((asset) => asset.category !== "poster").map((asset) => [asset.id, asset] as const),
+  )("%s keeps every frame clear of its own edge", (id, asset) => {
+    const { at } = reader(asset);
+    for (const [name, frame] of Object.entries(asset.frames!)) {
+      let peak = 0;
+      for (let x = 0; x < frame.width; x += 1) {
+        peak = Math.max(peak, at(frame.x, frame.y, x, 0, 3), at(frame.x, frame.y, x, frame.height - 1, 3));
+      }
+      for (let y = 0; y < frame.height; y += 1) {
+        peak = Math.max(peak, at(frame.x, frame.y, 0, y, 3), at(frame.x, frame.y, frame.width - 1, y, 3));
+      }
+      expect(peak, `${id}/${name} border alpha`).toBeLessThan(10);
+    }
+  });
+
+  /**
+   * Distinctness, measured over the covered region.
+   *
+   * Averaging over the whole frame was the wrong control and it hid two real defects: a crowd sprite
+   * is ninety percent transparent, so a genuine difference across the figure came out as 0.4 out of
+   * 255. Two families did turn out to be byte-identical — a poster layout that consumed no
+   * randomness, and a shirt silhouette whose `index` never reached the generator.
+   */
+  it.each(atlases.map((asset) => [asset.id, asset] as const))("%s has no two identical frames", (id, asset) => {
+    const { at } = reader(asset);
+    const names = Object.keys(asset.frames!);
+    let worst = { distance: Infinity, pair: "" };
+
+    for (let i = 0; i < names.length; i += 1) {
+      for (let j = i + 1; j < names.length; j += 1) {
+        const a = asset.frames![names[i]!]!;
+        const b = asset.frames![names[j]!]!;
+        if (a.width !== b.width || a.height !== b.height) continue;
+        let total = 0;
+        let counted = 0;
+        for (let y = 0; y < a.height; y += 2) {
+          for (let x = 0; x < a.width; x += 2) {
+            const alphaA = at(a.x, a.y, x, y, 3);
+            const alphaB = at(b.x, b.y, x, y, 3);
+            if (alphaA < 8 && alphaB < 8) continue;
+            for (let c = 0; c < 4; c += 1) {
+              total += Math.abs(at(a.x, a.y, x, y, c) - at(b.x, b.y, x, y, c));
+              counted += 1;
+            }
+          }
+        }
+        const distance = counted > 0 ? total / counted : 0;
+        if (distance < worst.distance) worst = { distance, pair: `${names[i]}/${names[j]}` };
+      }
+    }
+    expect(worst.distance, `${id} closest pair ${worst.pair}`).toBeGreaterThan(1);
+  });
+
+  it("gives the sprite atlases a uniform grid, which is what a sprite manager needs", () => {
+    for (const asset of atlases.filter((entry) => entry.category === "sprite")) {
+      expect(asset.grid, `${asset.id} grid`).toBeDefined();
+      const grid = asset.grid!;
+      expect(grid.count).toBe(Object.keys(asset.frames!).length);
+      // Every frame must sit exactly on the lattice, or `cellIndex` addresses the wrong picture.
+      for (const [name, frame] of Object.entries(asset.frames!)) {
+        expect(frame.width, `${name} width`).toBe(grid.cellWidth);
+        expect(frame.height, `${name} height`).toBe(grid.cellHeight);
+        expect(frame.x % grid.cellWidth, `${name} x`).toBe(0);
+        expect(frame.y % grid.cellHeight, `${name} y`).toBe(0);
+        expect(frame.cell, `${name} cell`).toBeTypeOf("number");
+      }
+    }
+  });
+
+  it("keeps every frame inside its sheet", () => {
+    for (const asset of atlases) {
+      for (const [name, frame] of Object.entries(asset.frames!)) {
+        expect(frame.x + frame.width, `${asset.id}/${name} right edge`).toBeLessThanOrEqual(asset.width);
+        expect(frame.y + frame.height, `${asset.id}/${name} bottom edge`).toBeLessThanOrEqual(asset.height);
+      }
+    }
   });
 });

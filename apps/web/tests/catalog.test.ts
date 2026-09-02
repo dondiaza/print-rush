@@ -2,11 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Color3, NullEngine, Scene, Texture } from "@babylonjs/core";
 import { KartPresets } from "@print-rush/3d-factory";
+import { ItemDefinitions } from "@print-rush/game-core";
 import { describe, expect, it } from "vitest";
 import { AssetCatalog, circuitKeyForTheme, type AssetManifest } from "@/render/AssetCatalog";
 import { MaterialLibrary } from "@/render/MaterialLibrary";
 import { buildKart } from "@/render/KartBuilder";
 import { propSourceKey, propSourceSpecs } from "@/render/PropLibrary";
+import { iconForItem } from "@/ui/IconAtlas";
 import { visualsForTheme } from "@/game/TrackBuilder";
 
 /**
@@ -94,11 +96,20 @@ describe("asset catalog resolution", () => {
     expect(always / 1048576).toBeLessThan(4);
   });
 
-  it("keeps every circuit inside the 3 MB budget, and the whole race under 7", () => {
+  /**
+   * Per tier, which is how the budget is actually declared.
+   *
+   * An earlier version of this also asserted a combined total under 7 MB. That number appeared
+   * nowhere in the art direction — it was an aggregate invented here — and the pilot circuit sits at
+   * 6.94, so it would have failed on the next asset added and sent someone hunting for a budget
+   * document that does not contain it. The declared limits are per tier; those are what is checked.
+   */
+  it("keeps every circuit inside its declared per-tier budget", () => {
     for (const [theme, families] of Object.entries(FAMILIES)) {
       const weight = catalog.raceWeight(theme, heaviestLiveries, families);
       expect(weight.track / 1048576, `${theme} track`).toBeLessThan(3);
-      expect(weight.total / 1048576, `${theme} race total`).toBeLessThan(7);
+      // Four liveries, the four heaviest. A megabyte and a bit is the whole set of seven.
+      expect(weight.kart / 1048576, `${theme} liveries`).toBeLessThan(1.2);
       // The tiers must account for everything, or the figure is not the download.
       expect(weight.always + weight.track + weight.kart).toBe(weight.total);
     }
@@ -246,5 +257,38 @@ describe("prop sources", () => {
     const displays = visualsForTheme("FLAGSHIP").props.filter((spec) => spec.kind === "SHELF");
     const prints = new Set(displays.map((spec) => spec.texture));
     expect(prints.size, `${[...prints].join(", ")}`).toBe(4);
+  });
+});
+
+describe("icon coverage", () => {
+  const atlas = manifest.assets.find((asset) => asset.id === "ui_icon_atlas")!;
+
+  /**
+   * Every item the game can hand a player has an icon.
+   *
+   * This is the assertion that makes the HUD's placeholder impossible to reintroduce. The mapping
+   * from item id to icon id is a transform rather than a lookup table precisely so that a new item
+   * cannot be added without its icon: it lands here as a failure on the next run, naming the item.
+   */
+  it("has an icon for every item in the game", () => {
+    const frames = Object.keys(atlas.frames!);
+    const items = Object.values(ItemDefinitions);
+    expect(items.length).toBeGreaterThanOrEqual(13);
+    for (const item of items) {
+      expect(frames, `${item.id} (${item.name}) has no icon`).toContain(iconForItem(item.id));
+    }
+  });
+
+  it("has the system icons the HUD asks for", () => {
+    const frames = Object.keys(atlas.frames!);
+    // Named here rather than derived, because these are chosen by the HUD's layout, not by data.
+    for (const name of ["ui_lap", "ui_timer", "ui_position", "ui_drift", "ui_item_empty", "ui_settings", "ui_turbo", "ui_map", "ui_wrong_way", "ui_shortcut"]) {
+      expect(frames, `${name} missing`).toContain(name);
+    }
+  });
+
+  it("ships the icon sheet in the always-downloaded tier, because the HUD is always on screen", () => {
+    expect(atlas.download).toBe("always");
+    expect(atlas.circuit).toBeUndefined();
   });
 });

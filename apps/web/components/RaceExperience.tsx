@@ -6,6 +6,7 @@ import { GameRuntime, type HudState, type LoadProgress, type RaceResult } from "
 import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
 import { loadActiveTrack } from "@/factory/TrackFactory";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
+import { Icon, iconForItem } from "@/ui/IconAtlas";
 
 type Props = {
   laps: AllowedLaps;
@@ -25,6 +26,7 @@ const INITIAL_HUD: HudState = {
   driftLevel: 0,
   hasItem: false,
   itemName: null,
+  itemId: null,
   countdown: 3,
   banner: null,
   playerProgress: 0,
@@ -167,6 +169,20 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         .drift-cue.grade-miss { color: #ff7b7b; font-size: 26px; }
         .drift-cue.grade-tap { color: #f7f2e8; font-size: 22px; opacity: 0.85; }
         .drift-cue.grade-chain { color: #ff3da6; }
+        /* Icons sit on the type baseline and never push the layout around; the fallback is a
+           readable word rather than a blank box. */
+        .ui-icon { vertical-align: -0.16em; margin-right: 0.34em; flex: none; }
+        .hud-item .ui-icon { margin-right: 0; }
+        .ui-icon-fallback {
+          font-size: 0.62em;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.72;
+          margin-right: 0.34em;
+        }
+        .ui-icon.spinning { animation: icon-spin 1.1s linear infinite; }
+        @media (prefers-reduced-motion: reduce) { .ui-icon.spinning { animation: none; } }
+        @keyframes icon-spin { to { transform: rotate(360deg); } }
         .load-bar {
           margin-top: 18px;
           height: 6px;
@@ -209,20 +225,26 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         <>
           <div className="connection-note">V4 · LOCAL 60 HZ · {hud.trackName.toUpperCase()}</div>
           <div className={`hud ${hud.shuffled ? "hud-shuffled" : ""}`} aria-live="polite">
-            <div className="hud-position">{hud.position}<span>/4</span></div>
+            <div className="hud-position"><Icon name="ui_position" size={15} label="Posición" />{hud.position}<span>/4</span></div>
             <div className="hud-top-center">
-              <div className={`hud-lap ${hud.lastLap ? "final" : ""}`}>{hud.lastLap ? "FINAL " : "LAP "}{hud.lap} / {hud.laps}</div>
-              <div className="hud-time">{formatTime(hud.timeMs)}</div>
+              <div className={`hud-lap ${hud.lastLap ? "final" : ""}`}><Icon name="ui_lap" size={16} label="Vuelta" />{hud.lastLap ? "FINAL " : "LAP "}{hud.lap} / {hud.laps}</div>
+              <div className="hud-time"><Icon name="ui_timer" size={16} label="Tiempo" />{formatTime(hud.timeMs)}</div>
               <div className="hud-sector">SECTOR {hud.sector} · {hud.surface}</div>
             </div>
             <MiniMap player={hud.playerProgress} bots={hud.botProgress} />
             <div className={`hud-item ${hud.hasItem ? "ready" : ""}`}>
-              <b>{hud.rouletteName ? "?" : hud.hasItem ? hud.itemName?.slice(0, 1) : "—"}</b>
+              <b>
+                {hud.rouletteName
+                  ? <Icon name="ui_settings" size={34} label="Imprimiendo" className="spinning" />
+                  : hud.itemId
+                    ? <Icon name={iconForItem(hud.itemId)} size={34} label={hud.itemName ?? "Objeto"} />
+                    : <Icon name="ui_item_empty" size={34} label="Sin objeto" />}
+              </b>
               <span>{hud.rouletteName ? `PRINTING · ${hud.rouletteName}` : hud.hasItem ? `E · ${hud.itemName?.toUpperCase()}` : "SIN OBJETO"}</span>
             </div>
             <div className="drift-meter">
               <div className="drift-label">
-                <span>DRIFT{hud.driftChain > 1 ? ` · CHAIN x${hud.driftChain}` : ""}</span>
+                <span><Icon name="ui_drift" size={15} label="Derrape" />DRIFT{hud.driftChain > 1 ? ` · CHAIN x${hud.driftChain}` : ""}</span>
                 <b>LV {hud.driftLevel}</b>
               </div>
               <div className={`drift-track ${hud.driftWindowOpen ? "window-open" : ""}`}>

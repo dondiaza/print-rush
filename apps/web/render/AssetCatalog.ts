@@ -19,7 +19,31 @@ import { Texture, type Scene } from "@babylonjs/core";
  *     in the manifest, `has` says so. Nothing here interpolates a filename and hopes.
  */
 
-export type VisualAssetCategory = "material" | "decal" | "kart-wrap" | "backdrop";
+export type VisualAssetCategory = "material" | "decal" | "kart-wrap" | "backdrop" | "ui" | "poster" | "sprite";
+
+/** One sub-rectangle of an atlas, in pixels and in inset UV. */
+export type AtlasFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Half-texel-inset UV bounds. Absent on grid atlases, which are addressed by cell. */
+  u0?: number;
+  v0?: number;
+  u1?: number;
+  v1?: number;
+  /** Cell index, for a uniform grid. Absent on shelf-packed atlases. */
+  cell?: number;
+};
+
+/** Uniform-grid geometry, present when the atlas is indexed by cell rather than by frame. */
+export type AtlasGrid = {
+  cellWidth: number;
+  cellHeight: number;
+  columns: number;
+  rows: number;
+  count: number;
+};
 
 /** One entry of `assets.manifest.json`. Mirrors what `tools/assetgen/index.mjs` writes. */
 export type VisualAsset = {
@@ -37,6 +61,10 @@ export type VisualAsset = {
   bytes: number;
   usage: string;
   status: string;
+  /** Sub-rectangles, when this file is an atlas. */
+  frames?: Record<string, AtlasFrame>;
+  /** Present when the atlas is a uniform grid. */
+  grid?: AtlasGrid;
   /**
    * When the file is fetched. `always` is the shared material set; `track` is one circuit's own
    * materials, its panorama and the decal families its theme scatters; `kart` is a livery, fetched
@@ -161,6 +189,11 @@ export class AssetCatalog {
   wrapTexture(livery: string): Texture | null {
     const asset = this.wrap(livery);
     return asset ? this.texture(asset.id) : null;
+  }
+
+  /** The frame map of an atlas, or null if this asset is not one. */
+  frames(id: string): Record<string, AtlasFrame> | null {
+    return this.get(id)?.frames ?? null;
   }
 
   /** Every decal of one family, e.g. `ink_splash`, in manifest order. */

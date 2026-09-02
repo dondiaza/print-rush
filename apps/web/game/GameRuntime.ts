@@ -82,6 +82,8 @@ export type HudState = {
   driftLevel: number;
   hasItem: boolean;
   itemName: string | null;
+  /** The held item's id, for the HUD's icon lookup. Null when empty-handed. */
+  itemId: string | null;
   countdown: number | null;
   banner: string | null;
   playerProgress: number;
@@ -150,6 +152,9 @@ function labelForAsset(id: string): string {
   if (id.startsWith("backdrop_")) return "Fondo del circuito";
   if (id.startsWith("kart_wrap_")) return "Vinilo del kart";
   if (id.startsWith("decal_")) return "Marcas y desgaste";
+  if (id.startsWith("poster_")) return "Carteles y gráfica";
+  if (id.startsWith("sprite_")) return "Público y ambiente";
+  if (id.startsWith("ui_")) return "Iconos";
   return "Materiales";
 }
 
@@ -1068,6 +1073,7 @@ export class GameRuntime {
       driftLevel: kart.driftLevel,
       hasItem: this.heldItem !== null,
       itemName: this.heldItem?.name ?? null,
+      itemId: this.heldItem?.id ?? null,
       countdown: this.countdown > 0 ? Math.ceil(this.countdown) : null,
       banner,
       playerProgress: this.totalProgress(this.player),

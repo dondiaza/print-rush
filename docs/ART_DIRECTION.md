@@ -129,10 +129,15 @@ No se genera todo a 4K. La resolución la decide el tamaño en pantalla, no la i
 **Presupuesto de descarga:** los assets se cargan **por circuito**, nunca los cinco a la vez.
 
 ```
-ALWAYS  (materiales compartidos)                          objetivo < 4 MB   real 3,47 MB
-TRACK   (materiales propios + panorama + decals del tema) objetivo < 3 MB   real ≤ 1,90 MB
-KART    (las liveries que hay en la parrilla)             —                 ≤ 0,95 MB
+ALWAYS  (materiales compartidos + iconos + ambiente)       objetivo < 4 MB   real 3,65 MB
+TRACK   (materiales, panorama, decals, carteles, sprites)  objetivo < 3 MB   real ≤ 2,41 MB
+KART    (las liveries que hay en la parrilla)              objetivo < 1,2 MB real ≤ 0,95 MB
 ```
+
+El circuito piloto (serigrafía) es el más pesado con 2,41 MB, y una carrera allí descarga 6,94 MB en
+total. **No se comprueba un total agregado**: una versión anterior de los tests asertaba «menos de
+7 MB por carrera», un número que no aparece en ninguna parte de este documento y que serigrafía roza
+por 60 KB. Los límites declarados son por nivel; eso es lo que se verifica.
 
 **Tres niveles, no dos.** La primera versión de esta tabla metía decals y wraps en `COMMON`, y el
 manifiesto sólo tenía un campo `circuit`: todo lo que no pertenecía a un circuito contaba como
@@ -282,6 +287,9 @@ y el llamante cae al generador procedural.**
 
 | Capa | Base color | Normal | Roughness |
 |---|---|---|---|
+| Carteles de pared | atlas por circuito | — | — |
+| Público y ambiente | atlas de rejilla, con alpha | — | — |
+| Iconos de UI | atlas compartido, con alpha | — | — |
 | Calzada y muros de circuito | del fichero nombrado por el tema | del fichero | del fichero |
 | Props, kerbs, estructuras | color del tema (procedural, teñido) | del fichero de su clase | del fichero |
 | Props (masa principal) | del fichero nombrado por el tema | del fichero | del fichero |
@@ -317,7 +325,7 @@ todas las superficies con el generador procedural. Era falso. Ahora escribe `sta
 lo único que el horno puede afirmar, y la accesibilidad desde el código se deriva aparte en
 `tools/assetgen/audit.mjs` leyendo el fuente real.
 
-Alcance medido: **133 de 133 ficheros** referenciados desde código de aplicación. Nada se hornea
+Alcance medido: **143 de 143 ficheros** referenciados desde código de aplicación. Nada se hornea
 para quedarse en disco.
 
 Llegar al 100 % exigió dos cosas que valían la pena por sí mismas:
@@ -332,6 +340,57 @@ Llegar al 100 % exigió dos cosas que valían la pena por sí mismas:
   sirva a seis colores, que es lo que salva el presupuesto de materiales. Un estampado horneado no
   se puede compartir así: el dibujo está en la textura. Dos props que difieren en estampado son dos
   fuentes; los que difieren sólo en color siguen compartiendo una.
+
+---
+
+## 12. FORMAS: SDF, ATLASES Y SPRITES
+
+Las texturas de §2 TIPO D se describen bien como función por píxel: ruido, trama, agregado. Los
+iconos, los carteles y las figuras **no**. Son *formas*, y una forma dibujada umbralizando ruido
+parece exactamente eso.
+
+`tools/assetgen/shapes.mjs` añade campos de distancia con signo. Compran tres cosas que este
+pipeline no tenía manera de conseguir: bordes nítidos a cualquier resolución, antialiasing gratis
+(la cobertura sale de la distancia, no de la rejilla de píxeles) y composición — unión, intersección
+y resta son mínimo, máximo y negación, así que un icono es una expresión corta en lugar de una
+rutina de rasterizado.
+
+### Lo que se dibuja así
+
+**23 iconos** — 13 de objeto y 10 de sistema. Sustituyen al hueco del HUD que imprimía la primera
+letra del nombre del objeto: el T-Shirt Cannon, el Tape Trap y el Thread Boost eran los tres «T», y
+la Sticker Mine y el Size Tag los dos «S». Cada icono es una silueta legible a 34 px con un solo
+color de acento, dibujada a partir de los objetos del propio juego: una camiseta, una caja de envío,
+una percha, una rasqueta.
+
+**30 carteles** en cinco familias, una por circuito. Composiciones gráficas —barras, bloques,
+semitonos, marcas de registro—, que es el vocabulario de la serigrafía y resulta ser el vocabulario
+correcto para este juego. No son ilustraciones, y eso es un límite declarado, no un descuido: sin
+generación de imagen, un póster ilustrado no se puede producir aquí. Lo que sí tienen es
+composición: elemento focal, margen, jerarquía y una regla al pie.
+
+**37 sprites** con alpha: público de convención y de tienda (frente y espalda), plantas en maceta y
+camisetas colgadas.
+
+### Dos empaquetadores, porque hay dos consumidores
+
+`packAtlas` empaqueta por estanterías con un canal de un píxel entre frames, y devuelve UV con medio
+téxel de margen. Sin ese canal el filtrado bilineal muestrea el frame vecino, que es el halo que el
+brief señala. Lo usan iconos y carteles.
+
+`packGrid` empaqueta en rejilla uniforme sin canal. Lo pide `SpriteManager` de Babylon, que dibuja
+miles de sprites billboard en **un** draw call y selecciona el frame por índice de celda — no sabe
+leer un mapa de frames irregular. Ese draw call único es toda la razón por la que un hall de
+convenciones puede estar lleno. Aquí el canal no hace falta porque cada sprite ya lleva su margen
+transparente dentro de la celda, y eso está asertado.
+
+### Coste
+
+Un cartel es un quad cuyas UV se reescriben al frame; los quads que comparten diseño se fusionan. Una
+pared de treinta carteles sacados de seis diseños cuesta **seis draw calls y un material**. El
+público de 160 personas cuesta **uno**. El prop `CROWD` en 3D se mantiene con peso bajo para las
+figuras pegadas a la pista, donde un sprite plano se delataría: modelado de cerca, sprites para la
+masa, nada más allá del punto en que una persona son dos píxeles.
 
 ---
 

@@ -293,6 +293,50 @@ rango por canal, validez de los normal maps, correspondencia manifiesto↔disco 
 y —nuevo— que cada id que el código puede nombrar existe en el manifiesto, y que el fallback
 procedural produce materiales completos con cero texturas residentes.
 
+### ETAPA 3f — FORMAS, ATLASES Y AMBIENTE
+
+143 ficheros, **143 alcanzables**. Lo que se añadió y por qué.
+
+**Iconos de UI (23).** El hueco de objeto del HUD imprimía `itemName.slice(0, 1)`. Tres objetos
+empezaban por T y dos por S, así que el jugador no podía saber qué llevaba. Ahora hay un atlas de
+23 iconos dibujados con campos de distancia con signo, direccionados por `background-position`, con
+un test que exige que **cada** objeto del juego resuelva a un frame que existe. El fallback no es una
+letra: si el atlas no carga, se muestra el nombre del objeto y se registra el fallo una vez.
+
+**Carteles de pared (30).** La conclusión más contundente de la auditoría era «paredes vacías»: cada
+circuito era una barrera de color plano de la salida a la meta. Cinco familias, una por circuito —
+gráfica de tienda, pruebas de impresión y pantoneras, señalización logística, pizarras de oficina,
+carteles de convención de propiedades inventadas.
+
+**Sprites ambientales (37).** Público de convención y de tienda con frente y espalda, plantas y
+camisetas colgadas. El prop `CROWD` en 3D son ~200 triángulos y un draw call cada uno: doscientos
+espectadores así son 40.000 triángulos y 200 draw calls, más que el resto de la escena. Los mismos
+doscientos como sprites son 400 triángulos y **un** draw call.
+
+**Seis defectos encontrados midiendo, no mirando:**
+
+1. El pelo se dibujaba en la barbilla — `intersect` es `max`, así que el semiplano tenía que ser
+   `y - c` y estaba escrito `-(y - c)`, quedándose con la mitad opuesta.
+2. Halo de 200 de alfa en todo el público: las piernas son segmentos con remate redondo, y el remate
+   sobresale medio grosor por debajo del punto donde acaba el segmento.
+3. `poster_warehouse_01` y `_03` eran **idénticos byte a byte**: el layout de marcador de zona no
+   consumía aleatoriedad ninguna.
+4. `poster_office_01` y `_05`, igual, por lo mismo en el diagrama de flujo.
+5. Las seis camisetas colgadas compartían silueta porque `index` nunca llegaba al generador.
+6. El redondeo a potencia de dos infló el atlas manga a 2048×4096 para ocho carteles de 512×768 —
+   ocho megapíxeles para guardar seis. WebGL2 no lo necesita.
+
+Y una métrica propia que estaba mal: comparar frames por su color medio decía 0,0 para carteles que
+no se parecen en nada, porque cinco carteles del mismo papel y la misma paleta tienen casi la misma
+media. Ahora se compara píxel a píxel **sobre la región cubierta** — promediar sobre el margen
+transparente de un sprite que es 90 % vacío reportaba una décima parte de la diferencia real.
+
+**Presupuesto.** Sigue cumpliéndose por nivel: 3,58 MB compartidos (< 4), ≤ 2,41 MB por circuito
+(< 3), ≤ 0,95 MB de liveries (< 1,2). Se retiró un assert agregado de «< 7 MB por carrera» que no
+aparecía en ninguna parte del art direction y que serigrafía rozaba por 60 KB.
+
+**Tests** — 330 en `apps/web`, 417 en total.
+
 ---
 
 ## IN PROGRESS

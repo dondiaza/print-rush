@@ -18,6 +18,9 @@ import { buildRoadSurface, buildWallSurface, curvatureAt, frameAt } from "@/rend
 import { createBackdrop, type Backdrop } from "@/render/BackdropDome";
 import type { AssetCatalog } from "@/render/AssetCatalog";
 import { scatterDecals, type Decals } from "@/render/DecalScatter";
+import { hangPosters, type Posters } from "@/render/PosterWall";
+import { createCrowd, createSpriteDressing, type Crowd } from "@/render/CrowdSprites";
+import { circuitKeyForTheme } from "@/render/AssetCatalog";
 
 /**
  * TRACK BUILDER V5.
@@ -198,6 +201,9 @@ export type BuiltTrack = {
   materials: MaterialLibrary;
   backdrop: Backdrop;
   decals: Decals;
+  posters: Posters;
+  crowd: Crowd;
+  dressing: Crowd;
   boostPads: BuiltFeature[];
   jumpPads: BuiltFeature[];
   itemBoxes: BuiltFeature[];
@@ -385,6 +391,82 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       }
     }
   }
+
+  // ------------------------------------------------------- posters and crowd
+  /**
+   * Wall dressing and spectators.
+   *
+   * Both sample the track by lap fraction rather than by angle, so they follow the circuit's real
+   * shape; both return null where there is nothing to attach to. Posters skip a node whose wall is
+   * open — a poster floating across a shortcut mouth is worse than a bare wall.
+   */
+  const nodeAtFraction = (fraction: number): TrackNode => {
+    const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
+    return nodes[index]!;
+  };
+
+  const posters = hangPosters(
+    scene,
+    theme,
+    circuitKeyForTheme(theme),
+    options.quality,
+    options.catalog ?? null,
+    random,
+    (fraction, side) => {
+      const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
+      const node = nodes[index]!;
+      // Only where the wall is actually closed on that side.
+      if (side > 0 ? !node.wallLeft : !node.wallRight) return null;
+      const frame = frameAt(nodes, index);
+      const half = node.width / 2;
+      const inward = new Vector3(-frame.nx * side, 0, -frame.nz * side);
+      return {
+        // On the barrier's inner face, at eye height for someone standing — which is above a kart,
+        // so a poster is legible over the wall rather than hidden behind it.
+        position: new Vector3(
+          node.x + frame.nx * side * (half + 0.35),
+          node.y + 2.1 + random() * 0.9,
+          node.z + frame.nz * side * (half + 0.35),
+        ),
+        facing: inward,
+      };
+    },
+  );
+
+  const crowd = createCrowd(
+    scene,
+    theme,
+    options.quality,
+    options.catalog ?? null,
+    random,
+    (fraction, offset) => {
+      const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
+      const node = nodes[index]!;
+      const frame = frameAt(nodes, index);
+      const half = node.width / 2;
+      const distance = half + Math.abs(offset);
+      const side = Math.sign(offset) || 1;
+      return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
+    },
+  );
+  // Plants and hanging stock, on the same sampler as the crowd.
+  const dressing = createSpriteDressing(
+    scene,
+    theme,
+    options.quality,
+    options.catalog ?? null,
+    random,
+    (fraction, offset) => {
+      const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
+      const node = nodes[index]!;
+      const frame = frameAt(nodes, index);
+      const half = node.width / 2;
+      const side = Math.sign(offset) || 1;
+      const distance = half + Math.abs(offset);
+      return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
+    },
+  );
+  void nodeAtFraction;
 
   // ------------------------------------------------------------------ features
   const nodeAt = (progress: number): TrackNode => nodes[Math.floor(((progress % 1) + 1) % 1 * nodes.length) % nodes.length]!;
@@ -728,6 +810,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     materials,
     backdrop,
     decals,
+    posters,
+    crowd,
+    dressing,
     boostPads,
     jumpPads,
     itemBoxes,
@@ -740,6 +825,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       materials.dispose();
       backdrop.dispose();
       decals.dispose();
+      posters.dispose();
+      crowd.dispose();
+      dressing.dispose();
       road.dispose();
       walls.forEach((wall) => wall.dispose());
       kerbSource.dispose();

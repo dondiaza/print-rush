@@ -98,6 +98,20 @@ export function auditIntegration(manifest, source) {
   const liveries = unionValues(source, "LiveryId").filter((value) => value !== "NONE");
   const circuits = recordValues(source, "CIRCUIT_KEY_BY_THEME");
   const families = decalFamilies(source);
+  /**
+   * Sprite families named by the renderer.
+   *
+   * Read out of both tables that place them — the crowd table and the dressing table — so adding a
+   * family to either makes its atlas count as reachable without touching this file, and baking one
+   * that neither table mentions correctly shows up as unreferenced. It did: plants and hanging
+   * garments were baked with nothing placing them until the dressing table existed.
+   */
+  const spriteFamilies = [
+    ...new Set([
+      ...[...declarationBody(source, "FAMILY_BY_THEME").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]),
+      ...[...declarationBody(source, "DRESSING_BY_THEME").matchAll(/family: "([a-z_]+)"/g)].map((m) => m[1]),
+    ]),
+  ];
 
   const referenced = [];
   const unreferenced = [];
@@ -119,6 +133,14 @@ export function auditIntegration(manifest, source) {
     } else if (asset.category === "decal") {
       const family = families.find((value) => id.startsWith(`decal_${value}_`));
       if (family) reason = `decal family ${family}`;
+    } else if (asset.category === "poster") {
+      // `poster_<circuit>_atlas`, from the same circuit keys the backdrops use.
+      const circuit = circuits.find((key) => id === `poster_${key}_atlas`);
+      if (circuit) reason = `poster wall ${circuit}`;
+    } else if (asset.category === "sprite") {
+      // `sprite_<family>_atlas`, where the families are named in the placement tables.
+      const family = spriteFamilies.find((value) => id === `sprite_${value}_atlas`);
+      if (family) reason = `sprite family ${family}`;
     }
 
     if (reason) {

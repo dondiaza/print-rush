@@ -7,6 +7,11 @@ import { MATERIAL_VARIANTS, buildVariant } from "./materials.mjs";
 import { DECALS, DECAL_COLORS } from "./decals.mjs";
 import { WRAPS } from "./wraps.mjs";
 import { BACKDROPS } from "./backdrops.mjs";
+import { ICON_IDS, iconShader } from "./icons.mjs";
+import { POSTER_FAMILIES } from "./posters.mjs";
+import { SPRITE_FAMILIES } from "./sprites.mjs";
+import { renderShape } from "./shapes.mjs";
+import { packAtlas, packGrid } from "./atlas.mjs";
 
 /**
  * Asset baking pipeline.
@@ -63,6 +68,10 @@ function write(relativePath, image, meta) {
     hasAlpha: image.channels === 4,
     bytes: png.length,
     usage: meta.usage,
+    // Sub-rectangles, for an atlas. Absent on single-image assets.
+    ...(meta.frames ? { frames: meta.frames } : {}),
+    // Uniform-grid geometry, for the sprite atlases the renderer indexes by cell.
+    ...(meta.grid ? { grid: meta.grid } : {}),
     /**
      * When this file is fetched, which is what a download budget is actually about.
      *
@@ -206,6 +215,125 @@ function bakeBackdrops() {
   return count;
 }
 
+
+// ------------------------------------------------------------------ UI icons
+
+const ICON_SIZE = 128;
+
+/**
+ * The icon atlas.
+ *
+ * One sheet, one request, and a frame map the HUD can drive straight from CSS
+ * `background-position`. What it replaces: the HUD printed the first letter of the held item's name,
+ * so a T-Shirt Cannon, a Tape Trap and a Thread Boost were all "T".
+ */
+function bakeIcons() {
+  const entries = ICON_IDS.map((id) => ({
+    id,
+    image: renderShape(ICON_SIZE, iconShader(id)),
+  }));
+  const { image, frames, occupancy } = packAtlas(entries, { maxWidth: 1024 });
+  write(join("ui", "ui_icon_atlas.png"), image, {
+    id: "ui_icon_atlas",
+    category: "ui",
+    usage: `${entries.length} UI and item icons, ${ICON_SIZE}px cells, addressed by frame`,
+    frames,
+    // The HUD is on screen in every race, so this is not optional per circuit.
+    download: "always",
+  });
+  void occupancy;
+  return entries.length;
+}
+
+// ------------------------------------------------------------------- posters
+
+/**
+ * Poster atlases, one per circuit.
+ *
+ * The walls were flat colour over a tiling material. These are what a shop's graphics wall, a
+ * workshop's proof board and a convention hall's poster run are made of.
+ */
+function bakePosters() {
+  let count = 0;
+  for (const [circuit, definition] of Object.entries(POSTER_FAMILIES)) {
+    const entries = [];
+    for (let index = 0; index < definition.count; index += 1) {
+      let seed = index * 6151 + 29;
+      for (let c = 0; c < circuit.length; c += 1) seed = (seed * 31 + circuit.charCodeAt(c)) >>> 0;
+      const shade = definition.build({ seed, index });
+      entries.push({
+        id: `poster_${circuit}_${String(index + 1).padStart(2, "0")}`,
+        image: renderShape(definition.size, shade),
+      });
+      count += 1;
+    }
+    const { image, frames } = packAtlas(entries, { maxWidth: 2048 });
+    const id = `poster_${circuit}_atlas`;
+    write(join("tracks", circuit, `${id}.png`), image, {
+      id,
+      category: "poster",
+      circuit,
+      usage: `${entries.length} original wall posters for ${circuit}, addressed by frame`,
+      frames,
+      download: "track",
+    });
+  }
+  return count;
+}
+
+// -------------------------------------------------------------------- sprites
+
+/**
+ * Ambient sprite atlases: crowd, plants, hanging stock.
+ *
+ * A billboard quad instead of a 200-triangle figure, which is the only way a convention hall reads
+ * as full rather than as sparsely attended.
+ */
+function bakeSprites() {
+  let count = 0;
+  const byScope = new Map();
+
+  for (const [family, definition] of Object.entries(SPRITE_FAMILIES)) {
+    const entries = [];
+    for (let index = 0; index < definition.count; index += 1) {
+      for (const facing of definition.facings) {
+        let seed = index * 4093 + 71;
+        for (let c = 0; c < family.length; c += 1) seed = (seed * 31 + family.charCodeAt(c)) >>> 0;
+        const shade = definition.build({ seed, facing, index });
+        const suffix = definition.facings.length > 1 ? `_${facing}` : "";
+        entries.push({
+          id: `${family}_${String(index + 1).padStart(2, "0")}${suffix}`,
+          image: renderShape(definition.size, shade),
+        });
+        count += 1;
+      }
+    }
+    const scope = definition.scope;
+    if (!byScope.has(scope)) byScope.set(scope, []);
+    byScope.get(scope).push({ family, entries });
+  }
+
+  for (const [scope, families] of byScope) {
+    for (const { family, entries } of families) {
+      // A grid, not a shelf pack: `SpriteManager` indexes by cell, and one draw call for the whole
+      // crowd is the entire point of using sprites here.
+      const { image, frames, grid } = packGrid(entries, { columns: 8 });
+      const id = `sprite_${family}_atlas`;
+      const folder = scope === "common" ? join("common", "sprites") : join("tracks", scope);
+      write(join(folder, `${id}.png`), image, {
+        id,
+        category: "sprite",
+        ...(scope === "common" ? {} : { circuit: scope }),
+        usage: `${entries.length} ${family} billboard sprites with alpha, ${grid.cellWidth}x${grid.cellHeight} cells`,
+        frames,
+        grid,
+        download: scope === "common" ? "always" : "track",
+      });
+    }
+  }
+  return count;
+}
+
 // ------------------------------------------------------------------ main
 
 function formatBytes(bytes) {
@@ -225,6 +353,9 @@ const materials = bakeMaterials();
 const decals = bakeDecals();
 const wraps = bakeWraps();
 const backdrops = bakeBackdrops();
+const icons = bakeIcons();
+const posters = bakePosters();
+const sprites = bakeSprites();
 
 // Per-circuit weight, which is the number the loading budget in ART_DIRECTION.md §3 is about.
 const byScope = new Map();
@@ -242,9 +373,21 @@ writeFileSync(
       generator: "tools/assetgen — procedural, deterministic",
       note:
         "No AI image generation is available in this environment; every asset here is generated by "
-        + "deterministic code. Illustration-class assets (posters, crowd sprites, avatar portraits) "
-        + "are listed as pending in docs/ART_DIRECTION.md and are not present.",
-      counts: { materials, decals, wraps, backdrops, files: manifest.length },
+        + "deterministic code — signed distance fields for shapes, periodic noise for surfaces. "
+        + "Posters, crowd sprites and icons are graphic compositions rather than illustrations, "
+        + "which is a stated limit, not an oversight: see docs/ART_DIRECTION.md section 0. Avatar "
+        + "portraits from photographs remain out of reach and are listed as pending there.",
+      counts: {
+        materials,
+        decals,
+        wraps,
+        backdrops,
+        icons,
+        posters,
+        sprites,
+        files: manifest.length,
+        atlases: manifest.filter((asset) => asset.frames !== undefined).length,
+      },
       bytesByScope: Object.fromEntries([...byScope].map(([scope, bytes]) => [scope, bytes])),
       totalBytes: bytesWritten,
       assets: manifest.sort((a, b) => a.id.localeCompare(b.id)),
@@ -258,7 +401,8 @@ console.table(
   [...byScope].map(([scope, bytes]) => ({ scope, files: manifest.filter((a) => (a.circuit ?? "common") === scope).length, size: formatBytes(bytes) })),
 );
 console.log(
-  `\n${manifest.length} files — ${materials} materials (x3 maps), ${decals} decals, ${wraps} wraps, ${backdrops} backdrops`,
+  `\n${manifest.length} files — ${materials} materials (x3 maps), ${decals} decals, ${wraps} wraps, `
+  + `${backdrops} backdrops, ${icons} icons, ${posters} posters, ${sprites} sprites`,
 );
 console.log(`total ${formatBytes(bytesWritten)}, manifest at ${relative(root, manifestPath)}`);
 
