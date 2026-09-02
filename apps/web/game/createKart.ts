@@ -18,6 +18,8 @@ export type KartCustomization = {
   quality?: RuntimeQuality;
   /** Baked livery texture for the bodywork. Null or absent paints it flat. */
   wrap?: Texture | null;
+  /** Styled face texture from the Character Studio. Null or absent uses the generated face. */
+  faceTexture?: Texture | null;
 };
 
 /** Builds a `KartDefinition` from a loose palette, for callers that only want a colour. */
@@ -49,6 +51,7 @@ export function createKart(
     const driver = createGeneratedCharacter(scene, customization.character, `${name}-driver`, {
       pose: "DRIVING",
       quality,
+      ...(customization.faceTexture ? { faceTexture: customization.faceTexture } : {}),
     });
     driver.parent = root;
     driver.scaling.setAll(0.78 * definition.compatibility.driverScale);

@@ -1,8 +1,10 @@
 import {
   Color3,
   Mesh,
+  MeshBuilder,
   PBRMaterial,
   Scene,
+  Texture,
   TransformNode,
   Vector2,
   Vector3,
@@ -43,6 +45,19 @@ export type CharacterVisual = {
 export type CharacterBuildOptions = {
   pose?: "STANDING" | "DRIVING" | "CELEBRATE";
   quality?: RuntimeQuality;
+  /**
+   * A styled face texture from the Character Studio, already loaded.
+   *
+   * Applied as a projected card in front of the skull rather than as the skull's own albedo, and
+   * that is a considered choice rather than a shortcut. The skull is an ellipsoid with spherical
+   * UVs; mapping a square portrait onto them would wrap the face around the head and stretch it at
+   * the poles. Re-UVing the skull to a proper head layout would be the alternative, and it would
+   * mean every generated head carrying a UV atlas it otherwise has no use for.
+   *
+   * The card works because the styling pipeline already outputs what it needs: an oval on
+   * transparency, so the head's own silhouette and its hair show around the edges of the photo.
+   */
+  faceTexture?: Texture | null;
 };
 
 type Palette = {
@@ -665,6 +680,48 @@ export function buildCharacter(
   attach(darkParts, colors.dark, spine, "dark");
 
   attach(headSkin, colors.skin, head, "head-skin");
+
+  /**
+   * The face card.
+   *
+   * Sized and placed from the skull's own dimensions rather than from constants, so it tracks a
+   * character's face width, height and head scale instead of drifting off a resized head. It sits a
+   * hair in front of the skull's forward extent and is slightly smaller than the skull's silhouette,
+   * so the photograph reads as the face rather than as a mask laid over the whole head.
+   *
+   * Unverified on screen: nobody in this environment can look at it. The geometry is derived rather
+   * than guessed, but the placement is the part a browser would settle in ten seconds.
+   */
+  if (options.faceTexture) {
+    const skullX = headHeight * 0.42 * face.width;
+    const skullY = headHeight * 0.5 * face.height;
+    const skullZ = headHeight * 0.44;
+    const card = MeshBuilder.CreatePlane(
+      `${name}-face-card`,
+      { width: skullX * 1.72, height: skullY * 1.62, sideOrientation: Mesh.FRONTSIDE },
+      scene,
+    );
+    card.parent = head;
+    // Forward of the skull surface, and a touch above centre because a face sits above the jaw.
+    card.position.set(0, skullY * 0.08, skullZ * 0.93);
+    card.isPickable = false;
+
+    const faceMaterial = new PBRMaterial(`${name}-face-material`, scene);
+    options.faceTexture.hasAlpha = true;
+    faceMaterial.albedoTexture = options.faceTexture;
+    faceMaterial.useAlphaFromAlbedoTexture = true;
+    faceMaterial.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    // Skin values, so the photograph is lit like the rest of the head rather than glowing.
+    faceMaterial.roughness = 0.62;
+    faceMaterial.metallic = 0;
+    faceMaterial.albedoColor = Color3.White();
+    // Never writes depth: the card overlaps the skull, and writing depth would let it cut a hole in
+    // the head from some angles.
+    faceMaterial.disableDepthWrite = true;
+    faceMaterial.zOffset = -3;
+    faceMaterial.backFaceCulling = true;
+    card.material = faceMaterial;
+  }
   attach(headHair, colors.hair, head, "head-hair");
   attach(headWhite, colors.eyeWhite, head, "head-eyes");
   attach(headIris, colors.iris, head, "head-iris");

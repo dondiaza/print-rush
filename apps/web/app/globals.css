@@ -374,3 +374,245 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
+
+/* ============================================================ CHARACTER STUDIO
+   The studio reuses the factory shell, so this only adds what is genuinely new:
+   the key gate, the creation steps, the crop editor and the library grid. */
+
+.studio-gate,
+.studio-step,
+.studio-loading {
+  max-width: 720px;
+  margin: 0 auto 64px;
+  padding: 32px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+}
+.studio-loading { text-align: center; letter-spacing: 0.12em; opacity: 0.72; }
+.studio-gate h2,
+.studio-step h2 { margin: 0 0 12px; letter-spacing: 0.04em; }
+.studio-gate p,
+.studio-step > p { opacity: 0.78; line-height: 1.6; max-width: 60ch; }
+
+.studio-gate label,
+.studio-step label {
+  display: block;
+  margin: 18px 0;
+}
+.studio-gate label > span,
+.studio-step label > span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+  margin-bottom: 6px;
+}
+.studio-gate input,
+.studio-step input[type="text"],
+.studio-step input:not([type]) {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+}
+
+.studio-actions,
+.cropper-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.studio-notice {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 3px solid currentColor;
+  font-size: 14px;
+}
+.studio-notice.ok { color: #8fe0a8; background: rgba(80, 200, 120, 0.08); }
+.studio-notice.error { color: #ff8fb4; background: rgba(255, 61, 166, 0.08); }
+.studio-notice.info { color: #8fd4ff; background: rgba(101, 216, 255, 0.08); }
+
+.studio-warnings {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  color: #ffd08a;
+}
+
+/* ------------------------------------------------------------------ dropzone */
+.dropzone {
+  margin: 24px 0 0;
+  padding: 44px 24px;
+  text-align: center;
+  border: 2px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.dropzone:hover,
+.dropzone:focus-visible { border-color: #ff3da6; background: rgba(255, 61, 166, 0.05); }
+.dropzone strong { display: block; font-size: 18px; margin-bottom: 8px; }
+.dropzone span { opacity: 0.6; font-size: 13px; }
+
+/* ------------------------------------------------------------------- cropper */
+.cropper-stage {
+  position: relative;
+  width: min(420px, 78vw);
+  margin: 24px auto 0;
+  aspect-ratio: 1;
+}
+.cropper-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background: #0d0b12;
+  touch-action: none;
+  cursor: grab;
+  display: block;
+}
+.cropper-canvas:active { cursor: grabbing; }
+.cropper-guides { position: absolute; inset: 0; pointer-events: none; }
+.guide-oval {
+  position: absolute;
+  inset: 8% 18%;
+  border: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50% / 46%;
+}
+.guide-line {
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.guide-eyes { top: 40%; }
+.guide-mouth { top: 66%; }
+
+.cropper-controls {
+  display: flex;
+  gap: 18px;
+  align-items: end;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.cropper-controls label { flex: 1 1 140px; margin: 0; }
+.cropper-controls input[type="range"] { width: 100%; }
+.cropper-reset,
+.character-actions button {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.character-actions button:hover:not(:disabled) { border-color: #65d8ff; }
+.character-actions button.danger:hover:not(:disabled) { border-color: #ff3da6; color: #ff8fb4; }
+.character-actions button:disabled { opacity: 0.45; cursor: default; }
+.cropper-hint { margin-top: 14px; font-size: 13px; opacity: 0.62; }
+.cropper-error { color: #ff8fb4; margin-top: 12px; }
+
+.face-review { display: flex; justify-content: center; margin: 24px 0 0; }
+.face-review img {
+  width: 256px;
+  height: 256px;
+  border-radius: 12px;
+  /* A chequerboard behind the alpha, so a transparent edge is visible as transparent rather than
+     silently matching the panel and hiding a halo. */
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.06) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+}
+
+/* ------------------------------------------------------------------- library */
+.studio-library { max-width: 1180px; margin: 0 auto 64px; }
+.studio-toolbar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.studio-toolbar input[type="text"],
+.studio-toolbar input:not([type]) {
+  flex: 1 1 260px;
+  padding: 11px 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.08em;
+}
+.studio-toggle { display: inline-flex; gap: 8px; align-items: center; font-size: 11px; letter-spacing: 0.12em; opacity: 0.75; }
+
+.studio-empty {
+  text-align: center;
+  padding: 64px 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+}
+.studio-empty h3 { margin: 0 0 8px; font-size: 22px; }
+.studio-empty p { opacity: 0.7; margin-bottom: 22px; }
+
+.character-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.character-grid > li {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+}
+.character-grid > li.deleted { opacity: 0.55; border-style: dashed; }
+.character-avatar {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-items: center;
+}
+.character-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.character-initial { font-size: 34px; font-weight: 700; opacity: 0.5; }
+.character-grid h3 { margin: 0 0 4px; text-align: center; font-size: 17px; }
+.character-meta {
+  margin: 0 0 14px;
+  text-align: center;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  opacity: 0.6;
+}
+.character-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+.studio-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 40px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 12px;
+  opacity: 0.66;
+}

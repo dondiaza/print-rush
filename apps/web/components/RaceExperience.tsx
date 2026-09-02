@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AllowedLaps } from "@print-rush/game-core";
 import { GameRuntime, type HudState, type LoadProgress, type RaceResult } from "@/game/GameRuntime";
-import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
+import { loadActiveKart } from "@/factory/storage";
+import { resolveRaceCharacter } from "@/characters/race";
 import { loadActiveTrack } from "@/factory/TrackFactory";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
 import { Icon, iconForItem } from "@/ui/IconAtlas";
@@ -98,7 +99,20 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       setHud(state);
     };
     const onProgress = (state: LoadProgress): void => { if (active) setProgress(state); };
-    void GameRuntime.create(canvas, { laps, muted, onHud, onFinish, onProgress, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
+    /**
+     * The driver is resolved before the engine starts.
+     *
+     * Awaited rather than fetched alongside: the kart and its driver are built once during
+     * `GameRuntime.create`, so a character that arrives afterwards would mean rebuilding the mesh
+     * mid-race. `resolveRaceCharacter` never rejects — it degrades to the local character and then
+     * to the fallback driver — so this cannot be the reason a race fails to start.
+     */
+    void resolveRaceCharacter().then((driver) => {
+      if (!active) return null;
+      onProgress({ loaded: 0, total: 1, label: "Preparando piloto" });
+      return GameRuntime.create(canvas, { laps, muted, onHud, onFinish, onProgress, character: driver.definition, kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() });
+    }).then((runtime) => {
+      if (!runtime) return;
       if (!active) { runtime.dispose(); return; }
       runtimeRef.current = runtime;
       runtime.start();

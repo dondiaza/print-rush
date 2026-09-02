@@ -13,11 +13,14 @@
   "dependencies": {
     "@babylonjs/core": "^9.23.0",
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@neondatabase/serverless": "^1.1.0",
     "@print-rush/3d-factory": "0.2.0",
     "@print-rush/game-core": "0.1.0",
+    "@vercel/blob": "^2.8.0",
     "next": "^16.3.3",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@print-rush/character-core": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
