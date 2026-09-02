@@ -616,3 +616,266 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   font-size: 12px;
   opacity: 0.66;
 }
+
+/* ================================================================= EDITOR
+   Categories left, character centre, that category's options right — the
+   layout the brief specifies, stacking on a narrow screen. */
+
+.editor {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) 320px;
+  gap: 18px;
+  max-width: 1320px;
+  margin: 0 auto 64px;
+  align-items: start;
+}
+@media (max-width: 1040px) {
+  .editor { grid-template-columns: 1fr; }
+  .editor-categories { flex-direction: row; overflow-x: auto; }
+}
+
+.editor-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 18px;
+}
+.editor-categories button {
+  padding: 12px 14px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.editor-categories button.active {
+  border-color: #ff3da6;
+  background: rgba(255, 61, 166, 0.1);
+}
+
+.editor-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.character-preview {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 68vh;
+  border-radius: 14px;
+  display: block;
+  background: #08070c;
+  touch-action: none;
+}
+.editor-stage-foot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.save-state {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+  margin-right: auto;
+}
+.save-state.saved { color: #8fe0a8; opacity: 1; }
+.save-state.saving, .save-state.pending { color: #ffd08a; opacity: 1; }
+.save-state.conflict, .save-state.error { color: #ff8fb4; opacity: 1; }
+
+.editor-options {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+}
+.editor-field { display: block; margin: 0; border: none; padding: 0; }
+.editor-field > span,
+.editor-field > legend {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+  padding: 0;
+}
+.editor-field > span b { opacity: 1; font-variant-numeric: tabular-nums; }
+.editor-field input[type="text"],
+.editor-field input:not([type]),
+.editor-field select {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+}
+.editor-field input[type="range"] { width: 100%; }
+
+.editor-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.editor-chips button {
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.editor-chips button.active { border-color: #65d8ff; background: rgba(101, 216, 255, 0.12); }
+
+.editor-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.editor-swatches button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  padding: 0;
+}
+.editor-swatches button.active {
+  border-color: #ffffff;
+  /* An outline as well as a border, so a white swatch selected on a dark panel is still legible. */
+  outline: 2px solid #ff3da6;
+  outline-offset: 2px;
+}
+
+.editor-hint { font-size: 12.5px; opacity: 0.62; line-height: 1.55; margin: 0; }
+.editor-hint a { color: #65d8ff; }
+
+/* ------------------------------------------------------- the import banner */
+.studio-import {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  background: rgba(101, 216, 255, 0.07);
+  border: 1px solid rgba(101, 216, 255, 0.3);
+  border-radius: 12px;
+}
+.studio-import strong { display: block; margin-bottom: 4px; }
+.studio-import span { font-size: 13px; opacity: 0.75; max-width: 60ch; display: block; }
+.studio-import-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.character-link {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  color: inherit;
+}
+.character-link:hover { border-color: #65d8ff; }
+.character-actions button.active { border-color: #ffd43b; color: #ffd43b; }
+
+/* ================================================================== ADMIN
+   A table rather than the library's cards, because the two answer different
+   questions: one is "which face is mine", the other "whose photo failed". */
+
+.admin { max-width: 1320px; margin: 0 auto 64px; }
+.admin-toolbar {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.admin-toolbar select {
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.admin-count { margin-left: auto; font-size: 11px; letter-spacing: 0.12em; opacity: 0.6; }
+
+/* Wide content scrolls inside its own container, never the page body. */
+.scroll-x { overflow-x: auto; }
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 900px;
+}
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  vertical-align: middle;
+}
+.admin-table thead th {
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  white-space: nowrap;
+}
+.admin-table td.num,
+.admin-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.admin-table td.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12px; opacity: 0.8; }
+.admin-table tr.deleted { opacity: 0.55; }
+.admin-table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+
+.admin-flag {
+  margin-left: 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffd43b;
+}
+.admin-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.admin-pill.ok { color: #8fe0a8; }
+.admin-pill.bad { color: #ff8fb4; }
+.admin-pill.wait { color: #ffd08a; }
+.admin-pill.none { color: #9aa0ab; }
+
+.admin-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin-actions button,
+.admin-actions .character-link {
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.admin-actions button:hover:not(:disabled) { border-color: #65d8ff; }
+.admin-actions button.danger:hover:not(:disabled) { border-color: #ff3da6; color: #ff8fb4; }
+.admin-actions button:disabled { opacity: 0.4; cursor: default; }

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Character, CharacterSummary, FaceCrop } from "@print-rush/character-core";
 import * as api from "@/characters/api";
+import { fromDefinition } from "@/characters/bridge";
+import { loadCharacters } from "@/factory/storage";
 import { FaceCropper } from "./FaceCropper";
 
 /**
@@ -30,6 +32,8 @@ type Stage =
 type Notice = { tone: "OK" | "ERROR" | "INFO"; message: string } | null;
 
 const LAST_SELECTED = "print-rush.last-character";
+/** Set once the local characters have been offered and imported, so the banner does not nag. */
+const IMPORTED_FLAG = "print-rush.characters-imported";
 
 export function CharacterStudioLibrary() {
   const [authorised, setAuthorised] = useState<boolean | null>(null);
@@ -41,6 +45,14 @@ export function CharacterStudioLibrary() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  /**
+   * Characters found in this browser from before the studio existed.
+   *
+   * Offered as an import rather than migrated silently: these are somebody's work, and moving it
+   * into a shared database under an owner id the code guessed at would be presumptuous. The local
+   * copies are never deleted either — they stay as the race fallback.
+   */
+  const [importable, setImportable] = useState<number>(0);
   const fileInput = useRef<HTMLInputElement>(null);
 
   /**
@@ -61,6 +73,12 @@ export function CharacterStudioLibrary() {
         setSelected(window.localStorage.getItem(LAST_SELECTED));
       } catch {
         // Storage blocked; the selection simply is not remembered.
+      }
+      try {
+        const already = window.localStorage.getItem(IMPORTED_FLAG) === "1";
+        setImportable(already ? 0 : loadCharacters().length);
+      } catch {
+        setImportable(0);
       }
     });
     return () => {
@@ -131,7 +149,11 @@ export function CharacterStudioLibrary() {
           onSubmit={(event) => {
             event.preventDefault();
             const form = new FormData(event.currentTarget);
-            api.setStudioKey(String(form.get("key") ?? ""), String(form.get("owner") ?? "studio"));
+            api.setStudioKey(
+              String(form.get("key") ?? ""),
+              String(form.get("owner") ?? "studio"),
+              form.get("admin") === "on",
+            );
             setAuthorised(api.studioKey() !== null);
           }}
         >
@@ -143,6 +165,17 @@ export function CharacterStudioLibrary() {
             <span>CLAVE</span>
             <input name="key" type="password" autoComplete="off" required />
           </label>
+          <label className="studio-toggle">
+            <input name="admin" type="checkbox" />
+            <span>MODO ADMINISTRADOR</span>
+          </label>
+          {/* An attribution label, not a permission: the key is what gates every request, and the
+              server records the claimed identity rather than trusting it. Saying so beside the
+              checkbox is better than implying it grants something. */}
+          <p className="editor-hint">
+            El modo administrador muestra los personajes de todo el equipo y la papelera. No concede
+            permisos por sí mismo: la clave es lo único que autoriza.
+          </p>
           <button className="cta-primary" type="submit">ENTRAR</button>
         </form>
       </section>
@@ -348,6 +381,79 @@ export function CharacterStudioLibrary() {
 
       {notice && <p className={`studio-notice ${notice.tone.toLowerCase()}`}>{notice.message}</p>}
 
+      {importable > 0 && (
+        <div className="studio-import">
+          <div>
+            <strong>
+              {importable === 1
+                ? "Hay 1 personaje guardado en este navegador"
+                : `Hay ${importable} personajes guardados en este navegador`}
+            </strong>
+            <span>
+              Son de antes del estudio. Al importarlos pasan al servidor y estaran en cualquier
+              dispositivo. Las copias locales se quedan donde estan.
+            </span>
+          </div>
+          <div className="studio-import-actions">
+            <button
+              className="cta-secondary"
+              onClick={() => {
+                try {
+                  window.localStorage.setItem(IMPORTED_FLAG, "1");
+                } catch {
+                  // Nothing to remember; the banner returns next visit, which is harmless.
+                }
+                setImportable(0);
+              }}
+            >
+              NO, GRACIAS
+            </button>
+            <button
+              className="cta-primary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const local = loadCharacters();
+                  let imported = 0;
+                  const failures: string[] = [];
+                  for (const definition of local) {
+                    try {
+                      await api.createCharacter({
+                        name: definition.name,
+                        appearance: fromDefinition(definition),
+                      });
+                      imported += 1;
+                    } catch (cause) {
+                      // One bad character must not stop the rest: the point of an import is to
+                      // rescue what can be rescued, and then say what could not.
+                      failures.push(definition.name);
+                      void cause;
+                    }
+                  }
+                  try {
+                    window.localStorage.setItem(IMPORTED_FLAG, "1");
+                  } catch {
+                    // As above.
+                  }
+                  setImportable(0);
+                  await refresh();
+                  if (failures.length > 0) {
+                    setNotice({
+                      tone: "ERROR",
+                      message: `Importados ${imported}. No se han podido importar: ${failures.join(", ")}.`,
+                    });
+                  } else {
+                    setNotice({ tone: "OK", message: `Importados ${imported} personajes.` });
+                  }
+                })
+              }
+            >
+              IMPORTARLOS
+            </button>
+          </div>
+        </div>
+      )}
+
       {characters.length === 0 ? (
         <div className="studio-empty">
           <h3>No tienes personajes todavía</h3>
@@ -408,6 +514,9 @@ export function CharacterStudioLibrary() {
                     >
                       SELECCIONAR
                     </button>
+                    <Link className="character-link" href={`/garage/characters/${character.id}`}>
+                      EDITAR
+                    </Link>
                     <button
                       onClick={() =>
                         void run(async () => {
@@ -426,6 +535,54 @@ export function CharacterStudioLibrary() {
                       DUPLICAR
                     </button>
                     <button
+                      className={character.isFavourite ? "active" : ""}
+                      aria-pressed={character.isFavourite}
+                      onClick={() =>
+                        void run(async () => {
+                          const full = await api.getCharacter(character.id);
+                          await api.updateCharacter(character.id, {
+                            isFavourite: !full.isFavourite,
+                            expectedVersion: full.version,
+                          });
+                          await refresh();
+                        })
+                      }
+                      disabled={busy}
+                    >
+                      {character.isFavourite ? "FAVORITO" : "+ FAVORITO"}
+                    </button>
+                    {character.faceState === "READY" || character.faceState === "FAILED" ? (
+                      <button
+                        onClick={() =>
+                          void run(async () => {
+                            // Re-runs the styling on the crop that is already stored, so the owner is
+                            // not asked for the photograph again. It lands as pending and the live
+                            // face is untouched until they accept.
+                            const { preview, warnings } = await api.processFace(character.id);
+                            const full = await api.getCharacter(character.id);
+                            setStage({ kind: "REVIEW", character: full, preview, warnings });
+                          })
+                        }
+                        disabled={busy}
+                      >
+                        REGENERAR ESTILO
+                      </button>
+                    ) : null}
+                    {character.faceState ? (
+                      <button
+                        className="danger"
+                        onClick={() =>
+                          void run(async () => {
+                            await api.deleteCharacterFace(character.id);
+                            await refresh();
+                          }, "Foto eliminada. El personaje se queda.")
+                        }
+                        disabled={busy}
+                      >
+                        QUITAR FOTO
+                      </button>
+                    ) : null}
+                    <button
                       className="danger"
                       onClick={() => void run(async () => { await api.deleteCharacter(character.id); await refresh(); }, "Movido a la papelera.")}
                       disabled={busy}
@@ -441,7 +598,7 @@ export function CharacterStudioLibrary() {
       )}
 
       <footer className="studio-footer">
-        <Link href="/garage/character">Editor de apariencia clásico</Link>
+        <Link href="/admin/characters">Administración de personajes</Link>
         <span>
           Los personajes se guardan en el servidor: seguirán aquí mañana y en otro dispositivo.
         </span>

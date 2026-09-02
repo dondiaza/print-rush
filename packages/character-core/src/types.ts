@@ -132,6 +132,14 @@ export type CharacterFace = {
   /** What the game actually samples. Safe to share with rivals. */
   gameTextureUrl: string | null;
   thumbnailUrl: string | null;
+  /**
+   * Every generated size, keyed by pixel width.
+   *
+   * The pipeline makes 256, 128 and 64. A lobby list showing a 40 px avatar should take the 64, not
+   * the 128 and certainly not the 512 px face texture — which is the waste the brief calls out.
+   * Empty on a face written before the map existed, in which case `thumbnailUrl` is the only option.
+   */
+  thumbnails: Record<string, string>;
   crop: FaceCrop;
   /** Bumped whenever the styling pipeline changes, so old faces can be spotted and reprocessed. */
   processingVersion: number;
@@ -216,15 +224,25 @@ export type CharacterLoadout = {
   kartId: string;
 };
 
-/** Summary row for the library and the admin table. Never carries an appearance or a photo. */
+/**
+ * Summary row for the library and the admin table.
+ *
+ * Never carries an appearance or a photograph: a list of forty characters should not download forty
+ * appearance blobs to render forty cards, and it has no business carrying a colleague's likeness at
+ * all. The admin columns — owner, created, active — are here because the alternative was a second
+ * endpoint returning almost the same thing.
+ */
 export type CharacterSummary = {
   id: string;
   name: string;
+  ownerId: string;
   status: CharacterStatus;
+  isActive: boolean;
   isFavourite: boolean;
   avatarThumbnailUrl: string | null;
   faceState: FaceProcessingState | null;
   defaultKartId: string | null;
+  createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
   deletedAt: string | null;

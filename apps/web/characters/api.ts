@@ -23,6 +23,7 @@ import type {
 
 const KEY_STORAGE = "print-rush.studio-key";
 const OWNER_STORAGE = "print-rush.studio-owner";
+const ADMIN_STORAGE = "print-rush.studio-admin";
 
 export class ApiError extends Error {
   constructor(
@@ -55,12 +56,29 @@ export function studioKey(): string | null {
   }
 }
 
-export function setStudioKey(key: string, owner: string): void {
+export function setStudioKey(key: string, owner: string, admin = false): void {
   try {
     window.localStorage.setItem(KEY_STORAGE, key.trim());
     window.localStorage.setItem(OWNER_STORAGE, owner.trim().toLowerCase() || "studio");
+    window.localStorage.setItem(ADMIN_STORAGE, admin ? "1" : "0");
   } catch {
     // Non-fatal: the key stays in memory for this page load.
+  }
+}
+
+/**
+ * Whether this browser is acting as an administrator.
+ *
+ * A label, not a permission. The server treats the header as attribution rather than proof — the
+ * studio key is the only thing that actually gates anything — so this decides which columns a
+ * person sees, and honest naming here matters more than the flag itself.
+ */
+export function isAdminMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(ADMIN_STORAGE) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -85,6 +103,7 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
   const key = studioKey();
   return {
     ...(key ? { "x-studio-key": key, "x-studio-owner": studioOwner() } : {}),
+    ...(key && isAdminMode() ? { "x-studio-admin": "1" } : {}),
     ...extra,
   };
 }
@@ -160,6 +179,7 @@ export async function updateCharacter(
     appearance?: CharacterAppearance;
     defaultKartId?: string | null;
     isFavourite?: boolean;
+    isActive?: boolean;
     /** Always sent by the studio: this is what turns a lost edit into a 409. */
     expectedVersion: number;
   },

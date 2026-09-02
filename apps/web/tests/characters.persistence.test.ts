@@ -156,13 +156,14 @@ live("character persistence, against the real database", () => {
       expect(styled.thumbnails.map((t) => t.size)).toContain(128);
 
       const texturePath = await putMedia(character.id, "textures", styled.texture, "image/png");
-      const thumbPath = await putMedia(
-        character.id,
-        "previews",
-        styled.thumbnails.find((t) => t.size === 128)!.png,
-        "image/png",
-      );
-      await repo.setPendingFace(character.id, texturePath, thumbPath, PROCESSING_VERSION);
+      // Every size, which is what the pipeline produces and what the map now stores. The first
+      // version kept only the 128 and threw the other two away.
+      const thumbnailPaths: Record<number, string> = {};
+      for (const entry of styled.thumbnails) {
+        thumbnailPaths[entry.size] = await putMedia(character.id, "previews", entry.png, "image/png");
+      }
+      expect(Object.keys(thumbnailPaths)).toHaveLength(3);
+      await repo.setPendingFace(character.id, texturePath, thumbnailPaths, PROCESSING_VERSION);
 
       const pending = await repo.getCharacter(character.id);
       expect(pending!.face!.state).toBe("PROCESSING");
@@ -173,6 +174,11 @@ live("character persistence, against the real database", () => {
       const withFace = await repo.getCharacter(character.id);
       expect(withFace!.face!.state).toBe("READY");
       expect(withFace!.face!.gameTextureUrl).toContain("/api/characters/media");
+      // All three sizes survived the confirm, and a 40 px avatar has a 64 to reach for.
+      expect(Object.keys(withFace!.face!.thumbnails).sort()).toEqual(["128", "256", "64"]);
+      expect(withFace!.face!.thumbnails["64"]).toContain("/api/characters/media");
+      // The default single-size URL still points at the 128, so an older reader is unaffected.
+      expect(withFace!.face!.thumbnailUrl).toBe(withFace!.face!.thumbnails["128"]);
       // A character with a face is no longer a draft.
       expect(withFace!.status).toBe("READY");
 
@@ -305,7 +311,7 @@ live("character persistence, against the real database", () => {
       // The media access helpers, which the media route depends on for its entire access decision.
       const styledIsRaceVisible = await repo.isRaceVisibleMedia(texturePath);
       expect(styledIsRaceVisible, "a texture not yet stored must not be race-visible").toBe(false);
-      await repo.setPendingFace(character.id, texturePath, thumbPath, 1);
+      await repo.setPendingFace(character.id, texturePath, { 128: thumbPath }, 1);
       await repo.confirmPendingFace(character.id);
       expect(await repo.isRaceVisibleMedia(texturePath), "a live texture is race-visible").toBe(true);
       expect(
@@ -316,6 +322,35 @@ live("character persistence, against the real database", () => {
       const owner = await repo.ownerOfMedia(originalPath);
       expect(owner?.ownerId).toBe("vitest");
       expect(await repo.ownerOfMedia("characters/nope/original/none.png")).toBeNull();
+
+      /**
+       * Every thumbnail size is reachable through the access check, not just the primary one.
+       *
+       * This is the assertion that was missing. Migration 002 moved the extra sizes into a JSONB map
+       * and these two lookups still only read the fixed columns, so the 64 and 256 px thumbnails
+       * answered 404 to everyone — their own owner included. The previous tests asserted the map's
+       * *contents* and never asked the access check about one, which is exactly the gap.
+       */
+      const extraSizes: Record<number, string> = {};
+      for (const size of [256, 64] as const) {
+        extraSizes[size] = await putMedia(character.id, "previews", png, "image/png");
+      }
+      await repo.setPendingFace(character.id, texturePath, { 128: thumbPath, ...extraSizes }, 1);
+      await repo.confirmPendingFace(character.id);
+
+      for (const [size, path] of Object.entries(extraSizes)) {
+        expect(await repo.isRaceVisibleMedia(path), `the ${size}px thumbnail must be servable`).toBe(true);
+        expect((await repo.ownerOfMedia(path))?.ownerId, `${size}px owner`).toBe("vitest");
+      }
+
+      // A pending thumbnail is deliberately not race-visible: it belongs to a face its owner has not
+      // accepted, and a rival should not see a version of somebody that may yet be rejected.
+      const pendingPath = await putMedia(character.id, "previews", png, "image/png");
+      await repo.setPendingFace(character.id, texturePath, { 128: pendingPath }, 1);
+      expect(await repo.isRaceVisibleMedia(pendingPath), "a pending thumbnail stays private").toBe(false);
+      // The owner can still see it — that is the whole point of a review step.
+      expect((await repo.ownerOfMedia(pendingPath))?.ownerId).toBe("vitest");
+      await repo.discardPendingFace(character.id);
 
       // Discarding a pending face when there is none must be a no-op rather than an error.
       const { discarded } = await repo.discardPendingFace(character.id);

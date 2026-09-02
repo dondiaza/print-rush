@@ -337,6 +337,51 @@ aparecía en ninguna parte del art direction y que serigrafía rozaba por 60 KB.
 
 **Tests** — 330 en `apps/web`, 417 en total.
 
+### FASE PERSONAJES — EDITOR, ANIMACIONES, MULTIJUGADOR E IMPORTACIÓN
+
+Cierra lo que quedaba de la fase de personajes salvo dos cosas que dependen de infraestructura.
+
+**Editor 3D (F/G/H).** Categorías a la izquierda, personaje en el centro, opciones a la derecha, y
+apilado en móvil. Las siete categorías del brief: cara, cuerpo, pelo, ropa, colores, accesorios y
+kart. El viewport mantiene una sola escena viva —motor, cámara, luces, sombras y peana se construyen
+una vez— y sólo reconstruye la malla del personaje, con las reconstrucciones agrupadas: arrastrar un
+slider dispara decenas de cambios por segundo y una reconstrucción por evento hundiría los FPS.
+
+**Autosave que no puede mentir.** Debounce de 1,2 s, y el indicador dice «Guardado» sólo después de
+que el servidor lo confirme. Cada petición lleva la versión con la que se editó, así que una segunda
+pestaña recibe un 409 y el editor ofrece recargar en lugar de pisar el trabajo de la primera. Además
+guarda al salir de la página: sin eso, un debounce pendiente se pierde al cerrar, que es exactamente
+el «lo cambié y no se guardó» que el autosave existe para evitar.
+
+**Animaciones (L).** Diez estados —idle, conducción, derrape a cada lado, turbo, salto, impacto,
+trompo, victoria y derrota— y cinco expresiones. No son clips: el rig son cinco nodos, así que un
+estado es una postura hacia la que el piloto interpola. Se dice así en el código en lugar de
+insinuar que hay un sistema de animación esquelética. Las cejas y la boca salen del merge de la
+cabeza sólo en calidad alta, +2 draw calls, para que una expresión pueda moverlas; en calidad baja
+se fusionan y la cara se queda quieta.
+
+**Multijugador (K), la parte de personajes.** El room distribuía la `CharacterDefinition` completa
+que **mandaba el cliente**: un cliente se describía a sí mismo ante todos los rivales como si fuera
+un hecho. Ahora el cliente manda un `characterId`, el servidor lo resuelve contra el estudio, lo
+revalida con el mismo validador, y difunde sólo el runtime. Se rechaza cualquier URL de rostro que no
+sea una ruta de medios del propio estudio: esa URL la piden todos los clientes de la sala, así que
+una absoluta convertiría un personaje editado en una petición de todos a un host ajeno.
+
+**Importación de lo que ya existía.** Los personajes del editor antiguo viven en `localStorage`. Se
+ofrecen para importar, no se migran en silencio —son trabajo de alguien— y las copias locales se
+quedan como fallback de carrera. El puente inverso es explícitamente con pérdida: un `jawRoundness`
+a medida no sobrevive, pero sí todo lo que una persona eligió y notaría que falta.
+
+**Miniaturas.** El pipeline generaba 256, 128 y 64 y tiraba dos: la fila de rostro tenía una sola
+columna. Migración 002 añade un mapa JSONB por tamaño, así que un avatar de 40 px ya no descarga
+una imagen de 128.
+
+**Tests** — 453 en total. Nuevos: los diez estados de pose son nueve posturas distinguibles y las
+dos direcciones de derrape se espejan; las expresiones mueven ceja y boca en calidad alta y son un
+no-op en baja; y ocho tests de servidor sobre la resolución de personaje, incluidos el id malformado
+que no llega a la red, la URL de rostro ajena que se rechaza, la proporción fuera de rango que se
+recorta, y la caché que colapsa ocho joins en una petición.
+
 ---
 
 ## IN PROGRESS

@@ -50,6 +50,7 @@ export async function PATCH(request: NextRequest, { params }: Params): Promise<R
         ? { defaultKartId: typeof body.defaultKartId === "string" ? body.defaultKartId : null }
         : {}),
       ...(typeof body.isFavourite === "boolean" ? { isFavourite: body.isFavourite } : {}),
+      ...(typeof body.isActive === "boolean" ? { isActive: body.isActive } : {}),
       ...(typeof body.expectedVersion === "number" ? { expectedVersion: body.expectedVersion } : {}),
     });
     return NextResponse.json({ character });

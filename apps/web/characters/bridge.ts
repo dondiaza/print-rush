@@ -182,3 +182,115 @@ export function toDefinition(
     photo: null,
   };
 }
+
+/**
+ * FROM A LOCALLY AUTHORED CHARACTER BACK TO AN APPEARANCE.
+ *
+ * The reverse direction, and it exists for exactly one reason: people built characters in the old
+ * garage editor before the studio existed, and those characters live in `localStorage`. Throwing
+ * them away because the storage changed would be the worst possible outcome of adding persistence.
+ *
+ * It is lossy, and honestly so. `CharacterDefinition` has around a hundred continuous parameters and
+ * an appearance has twenty-five slots, so a bespoke `jawRoundness` cannot survive the trip. What
+ * does survive is everything a person actually chose and would notice missing: their colours, their
+ * hair, their clothes, their build. The result is then validated like any other appearance, so an
+ * import can never produce a character the editor refuses to open.
+ */
+export function fromDefinition(definition: CharacterDefinition): CharacterAppearance {
+  const hair = definition.hair.style;
+  const hairStyle: CharacterAppearance["hairStyle"] =
+    hair === "BALD"
+      ? "BALD"
+      : hair === "BUZZ" || hair === "CREW" || hair === "UNDERCUT" || hair === "RECEDING"
+        ? "SHORT_02"
+        : hair === "SHORT" || hair === "PIXIE" || hair === "SIDE_PART" || hair === "SLICKED" || hair === "MESSY_SHORT"
+          ? "SHORT_01"
+          : hair === "PONYTAIL" || hair === "HIGH_PONYTAIL" || hair === "BUN" || hair === "DOUBLE_BUN" || hair === "BRAID"
+            ? "TIED_01"
+            : hair === "CURLY_SHORT" || hair === "CURLY_MEDIUM" || hair === "LONG_CURLY" || hair === "AFRO" || hair === "AFRO_SHORT"
+              ? "CURLY_01"
+              : hair === "LONG" || hair === "LONG_WAVY" || hair === "SHAG" || hair === "LOCS"
+                ? "LONG_01"
+                : "MEDIUM_01";
+
+  const beard = definition.facialHair.style;
+  const facialHair: CharacterAppearance["facialHair"] =
+    beard === "NONE"
+      ? "NONE"
+      : beard === "STUBBLE"
+        ? "STUBBLE"
+        : beard === "MUSTACHE"
+          ? "MOUSTACHE"
+          : beard === "FULL"
+            ? "FULL"
+            : "SHORT";
+
+  const preset = definition.body.preset;
+  const bodyPreset: CharacterAppearance["bodyPreset"] =
+    preset === "STANDARD" ? "BALANCED" : preset;
+
+  const shirt = definition.shirt.model;
+  const top: CharacterAppearance["top"] =
+    shirt === "HOODIE" ? "HOODIE" : shirt === "SWEATSHIRT" ? "HOODIE" : shirt === "JACKET" ? "RACING_SUIT" : "TEE";
+
+  const design = definition.shirt.frontDesign;
+  const shirtDesign: CharacterAppearance["shirtDesign"] =
+    design === "INK_BOLT"
+      ? "BOLT"
+      : design === "THREAD_WAVE"
+        ? "WAVE"
+        : design === "PRINT_SKULL"
+          ? "HALFTONE"
+          : design === "PACKAGE_CAT"
+            ? "SPLAT"
+            : "NONE";
+
+  const glasses = definition.glasses.style;
+  const accessoryFace: CharacterAppearance["accessoryFace"] =
+    glasses === "NONE" ? "NONE" : glasses === "SUNGLASSES" ? "SUNGLASSES" : glasses === "LARGE" ? "VISOR" : "GLASSES";
+
+  const accessories = new Set(definition.accessories);
+
+  return {
+    skinTone: definition.face.skinTone,
+    hairStyle,
+    hairColor: definition.hair.color,
+    // The old editor had no discrete eye or brow styles, so these start neutral rather than being
+    // guessed from a continuous parameter that meant something else.
+    eyeStyle: "NEUTRAL",
+    eyebrowStyle:
+      definition.face.eyebrows.preset === "THICK"
+        ? "THICK"
+        : definition.face.eyebrows.preset === "THIN"
+          ? "THIN"
+          : definition.face.eyebrows.preset === "ARCHED"
+            ? "ANGLED"
+            : "NEUTRAL",
+    facialHair,
+
+    bodyPreset,
+    // Divided back out of the preset's own multipliers, so an imported body is the same size it was
+    // rather than the preset compounded with itself.
+    heightScale: definition.body.height / createDefaultCharacter().body.height,
+    bodyWidth: definition.body.torsoWidth / createDefaultCharacter().body.torsoWidth,
+    shoulderWidth: definition.body.shoulderWidth / createDefaultCharacter().body.shoulderWidth,
+    headScale: definition.body.headScale / createDefaultCharacter().body.headScale,
+    legLength: definition.body.legLength / createDefaultCharacter().body.legLength,
+
+    top,
+    shirtDesign,
+    bottom: definition.pants.style === "JOGGER" ? "TRACK" : definition.pants.style === "CHINO" ? "CARGO" : "JEANS",
+    shoes: definition.shoes.style === "HIGH_TOP" ? "BOOTS" : definition.shoes.style === "RUNNER" ? "TRAINERS" : "CANVAS",
+    gloves: "NONE",
+    jacket: shirt === "JACKET" ? "BOMBER" : "NONE",
+
+    accessoryHead: accessories.has("CAP") ? "CAP" : accessories.has("HEADPHONES") ? "HEADSET" : "NONE",
+    accessoryFace,
+    accessoryBack: accessories.has("BACKPACK") ? "BACKPACK" : "NONE",
+    accessoryWrist: accessories.has("WATCH") ? "WATCH" : "NONE",
+
+    primaryColor: definition.shirt.baseColor,
+    secondaryColor: definition.shirt.sleeveColor,
+    accentColor: definition.shirt.collarColor,
+  };
+}

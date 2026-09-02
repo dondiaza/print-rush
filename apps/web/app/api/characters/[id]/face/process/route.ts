@@ -55,12 +55,21 @@ export async function POST(
 
       const styled = styleFace(Buffer.from(stored.body));
       const texturePath = await putMedia(id, "textures", styled.texture, "image/png");
-      // The 128 px thumbnail is the one the library and the lobby use; the others are derived from
-      // the same styled image and can be added when a surface actually needs them.
-      const thumb = styled.thumbnails.find((entry) => entry.size === 128) ?? styled.thumbnails[0]!;
-      const thumbPath = await putMedia(id, "previews", thumb.png, "image/png");
 
-      await setPendingFace(id, texturePath, thumbPath, PROCESSING_VERSION);
+      /**
+       * Every size the pipeline produced, stored.
+       *
+       * The first version kept only the 128 and discarded the other two, which meant a 40 px avatar
+       * in a list downloaded a 128 px image — the exact waste the brief names. They are uploaded in
+       * parallel because they are independent writes and three sequential round trips to object
+       * storage is the slowest part of this route.
+       */
+      const uploaded = await Promise.all(
+        styled.thumbnails.map(async (entry) => [entry.size, await putMedia(id, "previews", entry.png, "image/png")] as const),
+      );
+      const thumbnails = Object.fromEntries(uploaded) as Record<number, string>;
+
+      await setPendingFace(id, texturePath, thumbnails, PROCESSING_VERSION);
       await audit(id, "FACE_PROCESSED", actor.id, { processingVersion: PROCESSING_VERSION });
 
       const updated = await getCharacter(id);

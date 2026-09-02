@@ -22,13 +22,26 @@ import {
   type KartState,
   type RaceProgress,
 } from "@print-rush/game-core";
+import { FALLBACK_RUNTIME } from "@print-rush/character-core";
 import { PlayerStateSchema, RaceStateSchema } from "./RaceState.js";
+import { resolveRuntime } from "../characters.js";
 import {
   createDefaultCharacter, createDefaultKart, hashDefinition, migrateCharacter, migrateKart,
   validateCharacter, validateKart,
 } from "@print-rush/3d-factory";
 
-type RoomOptions = { laps?: number; nickname?: string; maxPlayers?: number; character?: unknown; kart?: unknown };
+type RoomOptions = {
+  laps?: number;
+  nickname?: string;
+  maxPlayers?: number;
+  /**
+   * The persisted character to race with. The server resolves it; the client does not describe it.
+   */
+  characterId?: unknown;
+  /** Legacy: a locally authored character, for a client that has never used the studio. */
+  character?: unknown;
+  kart?: unknown;
+};
 
 type InternalPlayer = {
   input: GameInput;
@@ -81,17 +94,47 @@ export class RaceRoom extends Room<{ state: RaceStateSchema }> {
     });
   }
 
-  onJoin(client: Client, options: RoomOptions): void {
+  /**
+   * Joining, with the character resolved server-side.
+   *
+   * `async`, which Colyseus supports and which matters here: the room will not admit a player until
+   * it knows who that player is, so no client can be handed a rival described by that rival. The
+   * resolution never rejects — it falls back to the generic driver — so making this asynchronous
+   * cannot become a new way for a join to fail.
+   */
+  async onJoin(client: Client, options: RoomOptions): Promise<void> {
     const slot = this.state.players.size;
     const spawn = this.track.spawnPoints[slot] ?? this.track.spawnPoints[0]!;
     const player = new PlayerStateSchema();
     player.id = client.sessionId;
     player.nickname = this.cleanNickname(options.nickname);
     const customization = this.cleanCustomization(options.character, options.kart);
-    player.characterDefinition = JSON.stringify(customization.character);
     player.kartDefinition = JSON.stringify(customization.kart);
-    player.characterHash = hashDefinition(customization.character);
     player.kartHash = hashDefinition(customization.kart);
+
+    /**
+     * The character comes from its id, not from the client.
+     *
+     * When an id is supplied the server fetches that character from the studio and broadcasts what
+     * it found; the client's own description is ignored entirely. Without an id — a player who never
+     * used the studio — the locally authored definition is still accepted and still validated, so
+     * nothing that worked before stopped working.
+     */
+    const runtime = await resolveRuntime(options.characterId);
+    if (runtime.id !== FALLBACK_RUNTIME.id || typeof options.characterId === "string") {
+      player.characterId = runtime.id;
+      player.characterName = runtime.name;
+      player.characterAppearance = JSON.stringify(runtime.appearance);
+      player.faceTextureUrl = runtime.faceTextureUrl ?? "";
+      player.avatarThumbnailUrl = runtime.avatarThumbnailUrl ?? "";
+      player.characterVersion = runtime.version;
+      // The nickname follows the character when one was resolved, so the name on the HUD is the name
+      // the player gave their driver rather than two different labels for the same person.
+      if (runtime.id !== FALLBACK_RUNTIME.id) player.nickname = runtime.name;
+    } else {
+      player.characterDefinition = JSON.stringify(customization.character);
+      player.characterHash = hashDefinition(customization.character);
+    }
     player.kart.x = spawn.position.x;
     player.kart.y = spawn.position.y;
     player.kart.z = spawn.position.z;

@@ -51,7 +51,7 @@ import {
   type CameraContext,
 } from "@/render/RaceCameraV5";
 import { animateKartWheels, createKart, setKartPose } from "./createKart";
-import { animateCharacter, type CharacterVisual } from "@/render/CharacterBuilder";
+import { animateCharacter, type CharacterVisual, type DriverState } from "@/render/CharacterBuilder";
 import { characterVisualOf } from "@/factory/GeneratedCharacter";
 import { getDeviceReport, getHardwareScalingLevel, qualityForProfile } from "@/performance/PerformanceManager";
 import type { StoredTrack } from "@/factory/TrackFactory";
@@ -277,6 +277,9 @@ export class GameRuntime {
   private maxSpeedReached = 0;
   /** Angle of the finish orbit, radians. */
   private finishOrbit = 0;
+
+  /** Racer ids, leader first. Refreshed with the HUD, read by the driver poses. */
+  private ranking: string[] = [];
 
   private readonly cameraContext: CameraContext = { aimPoint: new Vector3(), floorY: 0 };
   private readonly scratch = new Vector3();
@@ -974,6 +977,7 @@ export class GameRuntime {
           lean: kart.lean,
           time: seconds,
           flinch: racer.flinch,
+          state: this.driverStateOf(racer, kart),
         });
       }
     }
@@ -1059,6 +1063,9 @@ export class GameRuntime {
     this.lastHudAt = now;
 
     const ranked = rankPlayers(this.racers.map((racer) => ({ id: racer.id, progress: racer.progress })));
+    // Cached so the driver poses can tell a winner from a loser without ranking the field again on
+    // every frame of every character.
+    this.ranking = ranked.map((entry) => entry.id);
     const position = ranked.findIndex((entry) => entry.id === "player") + 1;
     const kart = this.player.kart;
     const banner = this.banner && this.banner.until > this.elapsedMs ? this.banner.text : null;
@@ -1134,6 +1141,27 @@ export class GameRuntime {
         .filter((racer) => racer !== this.player && this.totalProgress(racer) < mine)
         .sort((a, b) => this.totalProgress(b) - this.totalProgress(a))[0] ?? null
     );
+  }
+
+  /**
+   * Which posture the driver should be in, from the state the physics already produced.
+   *
+   * Ordered by what should win when several are true at once, which is the only interesting decision
+   * here: being hit beats everything, because a driver who keeps a triumphant pose through a
+   * collision looks broken; a finished race beats drifting, because the race is over.
+   */
+  private driverStateOf(racer: Racer, kart: KartState): DriverState {
+    if (racer.flinch > 0.35) return "HIT";
+    if (racer.progress.finishedAt !== null) {
+      // Winner or not — the podium pose is decided by where they came, and rank is already computed.
+      return this.ranking.indexOf(racer.id) === 0 ? "VICTORY" : "DEFEAT";
+    }
+    if (kart.position.y > 0.35) return "JUMP";
+    if (kart.driftActive && kart.driftDirection !== 0) {
+      return kart.driftDirection < 0 ? "DRIFT_LEFT" : "DRIFT_RIGHT";
+    }
+    if (kart.boostRemaining > 0.05) return "BOOST";
+    return "DRIVE";
   }
 
   private vectorOf(kart: KartState): Vector3 {

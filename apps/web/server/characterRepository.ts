@@ -74,11 +74,40 @@ type FaceRow = {
   processing_version: number;
   pending_texture_path: string | null;
   pending_thumb_path: string | null;
+  thumbnails: unknown;
+  pending_thumbnails: unknown;
   created_at: string;
   updated_at: string;
 };
 
 const DEFAULT_CROP: FaceCrop = { x: 0, y: 0, width: 1, height: 1, rotation: 0, zoom: 1 };
+
+/**
+ * The stored thumbnail map, as media URLs keyed by pixel size.
+ *
+ * Tolerates an absent or malformed column: a face written before migration 002 has an empty map and
+ * the caller falls back to `thumbnailUrl`. Returning an empty object rather than throwing is what
+ * keeps an older row openable.
+ */
+function thumbnailMap(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null) return {};
+  const out: Record<string, string> = {};
+  for (const [size, path] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof path === "string" && path.length > 0 && /^[0-9]+$/.test(size)) {
+      const url = mediaUrl(path);
+      if (url) out[size] = url;
+    }
+  }
+  return out;
+}
+
+/** Every string value in a JSONB object column, for the cleanup paths. */
+function storedPaths(value: unknown): string[] {
+  if (typeof value !== "object" || value === null) return [];
+  return Object.values(value as Record<string, unknown>).filter(
+    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+  );
+}
 
 /**
  * Turns a stored pathname into the URL a client should use.
@@ -103,6 +132,7 @@ function toFace(row: FaceRow | undefined): CharacterFace | null {
     croppedUrl: mediaUrl(row.cropped_path),
     gameTextureUrl: mediaUrl(row.game_texture_path),
     thumbnailUrl: mediaUrl(row.thumbnail_path),
+    thumbnails: thumbnailMap(row.thumbnails),
     crop: { ...DEFAULT_CROP, ...crop },
     processingVersion: row.processing_version,
     createdAt: row.created_at,
@@ -217,6 +247,8 @@ export type UpdateInput = {
   appearance?: unknown;
   defaultKartId?: string | null;
   isFavourite?: boolean;
+  /** Deactivating hides a character from selection without deleting it. Admin tooling uses this. */
+  isActive?: boolean;
   status?: CharacterStatus;
   /** The version the caller last read. Omit to skip the lock, which only the admin tools do. */
   expectedVersion?: number;
@@ -254,6 +286,7 @@ export async function updateCharacter(
 
   const defaultKartId = input.defaultKartId !== undefined ? input.defaultKartId : before.defaultKartId;
   const isFavourite = input.isFavourite ?? before.isFavourite;
+  const isActive = input.isActive ?? before.isActive;
   const status = input.status ?? before.status;
 
   const after = { name, appearance, defaultKartId };
@@ -264,7 +297,7 @@ export async function updateCharacter(
   const rows = (await query.query(
     `UPDATE characters
         SET name = $3, slug = $4, appearance = $5::jsonb, default_kart_id = $6,
-            is_favourite = $7, status = $8, version = $9, updated_at = now()
+            is_favourite = $7, status = $8, version = $9, is_active = $10, updated_at = now()
       WHERE id = $1
         AND deleted_at IS NULL
         AND ($2::integer IS NULL OR version = $2)
@@ -279,6 +312,7 @@ export async function updateCharacter(
       isFavourite,
       status,
       nextVersion,
+      isActive,
     ],
   )) as CharacterRow[];
 
@@ -395,8 +429,8 @@ export async function duplicateCharacter(
     if (original) {
       const inserted = (await query.query(
         `INSERT INTO character_faces
-           (character_id, id, state, game_texture_path, thumbnail_path, crop, processing_version)
-         VALUES ($1, $2, 'READY', $3, $4, $5::jsonb, $6)
+           (character_id, id, state, game_texture_path, thumbnail_path, crop, processing_version, thumbnails)
+         VALUES ($1, $2, 'READY', $3, $4, $5::jsonb, $6, $7::jsonb)
          RETURNING *`,
         [
           newId,
@@ -405,6 +439,8 @@ export async function duplicateCharacter(
           original.thumbnail_path,
           JSON.stringify(original.crop ?? {}),
           original.processing_version,
+          // The map is referenced, not re-uploaded: one styled set serves both characters.
+          JSON.stringify(original.thumbnails ?? {}),
         ],
       )) as FaceRow[];
       face = inserted[0];
@@ -462,15 +498,18 @@ export async function setFaceState(
 export async function setPendingFace(
   characterId: string,
   texturePath: string,
-  thumbPath: string,
+  thumbnails: Record<number, string>,
   processingVersion: number,
 ): Promise<void> {
+  // The 128 px one stays in `pending_thumb_path` as the default a caller gets from `thumbnailUrl`;
+  // the whole set goes in the map. Writing both means an older reader and a newer one agree.
+  const primary = thumbnails[128] ?? Object.values(thumbnails)[0] ?? null;
   await sql().query(
     `UPDATE character_faces
-        SET pending_texture_path = $2, pending_thumb_path = $3,
-            processing_version = $4, state = 'PROCESSING', failure_reason = NULL, updated_at = now()
+        SET pending_texture_path = $2, pending_thumb_path = $3, pending_thumbnails = $4::jsonb,
+            processing_version = $5, state = 'PROCESSING', failure_reason = NULL, updated_at = now()
       WHERE character_id = $1`,
-    [characterId, texturePath, thumbPath, processingVersion],
+    [characterId, texturePath, primary, JSON.stringify(thumbnails), processingVersion],
   );
 }
 
@@ -486,7 +525,7 @@ export async function confirmPendingFace(characterId: string): Promise<{ replace
   const face = rows[0];
   if (!face?.pending_texture_path) throw new NotFoundError(characterId);
 
-  const replaced = [face.game_texture_path, face.thumbnail_path].filter(
+  const replaced = [face.game_texture_path, face.thumbnail_path, ...storedPaths(face.thumbnails)].filter(
     (path): path is string => typeof path === "string" && path.length > 0,
   );
 
@@ -494,8 +533,10 @@ export async function confirmPendingFace(characterId: string): Promise<{ replace
     `UPDATE character_faces
         SET game_texture_path = pending_texture_path,
             thumbnail_path = pending_thumb_path,
+            thumbnails = pending_thumbnails,
             pending_texture_path = NULL,
             pending_thumb_path = NULL,
+            pending_thumbnails = '{}'::jsonb,
             state = 'READY',
             failure_reason = NULL,
             updated_at = now()
@@ -513,12 +554,14 @@ export async function confirmPendingFace(characterId: string): Promise<{ replace
 export async function discardPendingFace(characterId: string): Promise<{ discarded: string[] }> {
   const rows = (await sql().query("SELECT * FROM character_faces WHERE character_id = $1", [characterId])) as FaceRow[];
   const face = rows[0];
-  const discarded = [face?.pending_texture_path, face?.pending_thumb_path].filter(
-    (path): path is string => typeof path === "string" && path.length > 0,
-  );
+  const discarded = [
+    face?.pending_texture_path,
+    face?.pending_thumb_path,
+    ...storedPaths(face?.pending_thumbnails),
+  ].filter((path): path is string => typeof path === "string" && path.length > 0);
   await sql().query(
     `UPDATE character_faces
-        SET pending_texture_path = NULL, pending_thumb_path = NULL,
+        SET pending_texture_path = NULL, pending_thumb_path = NULL, pending_thumbnails = '{}'::jsonb,
             state = CASE WHEN game_texture_path IS NULL THEN 'UPLOADED' ELSE 'READY' END,
             updated_at = now()
       WHERE character_id = $1`,
@@ -539,13 +582,23 @@ export async function deleteFace(characterId: string, actorId: string): Promise<
     face.thumbnail_path,
     face.pending_texture_path,
     face.pending_thumb_path,
+    ...storedPaths(face.thumbnails),
+    ...storedPaths(face.pending_thumbnails),
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
   await sql().query("DELETE FROM character_faces WHERE character_id = $1", [characterId]);
   await audit(characterId, "FACE_DELETED", actorId, {});
   return paths;
 }
 
-/** Resolves a stored pathname back to the character that owns it, for the media route's check. */
+/**
+ * Resolves a stored pathname back to the character that owns it, for the media route's check.
+ *
+ * The JSONB thumbnail maps are searched as well as the fixed columns. That is not thoroughness for
+ * its own sake: when migration 002 moved the extra sizes into a map, these two queries still only
+ * looked at the columns, so the 64 and 256 px thumbnails answered 404 to *everyone* — including their
+ * own owner. It failed closed, so it was a broken feature rather than a leak, and it was invisible
+ * because the tests asserted the map's contents without ever fetching one through the route.
+ */
 export async function ownerOfMedia(pathname: string): Promise<{ characterId: string; ownerId: string } | null> {
   const rows = (await sql().query(
     `SELECT c.id AS character_id, c.owner_id
@@ -553,6 +606,8 @@ export async function ownerOfMedia(pathname: string): Promise<{ characterId: str
        JOIN characters c ON c.id = f.character_id
       WHERE $1 IN (f.original_path, f.cropped_path, f.game_texture_path, f.thumbnail_path,
                    f.pending_texture_path, f.pending_thumb_path)
+         OR EXISTS (SELECT 1 FROM jsonb_each_text(f.thumbnails) AS t(size, path) WHERE t.path = $1)
+         OR EXISTS (SELECT 1 FROM jsonb_each_text(f.pending_thumbnails) AS p(size, path) WHERE p.path = $1)
       LIMIT 1`,
     [pathname],
   )) as { character_id: string; owner_id: string }[];
@@ -560,11 +615,19 @@ export async function ownerOfMedia(pathname: string): Promise<{ characterId: str
   return row ? { characterId: row.character_id, ownerId: row.owner_id } : null;
 }
 
-/** Whether a pathname is safe to hand to a race client: only styled output, never a photograph. */
+/**
+ * Whether a pathname is safe to hand to a race client: only styled output, never a photograph.
+ *
+ * Includes the live thumbnail map — a lobby avatar is styled output by definition — but deliberately
+ * *not* the pending one. A pending thumbnail belongs to a face its owner has not accepted yet, and
+ * a rival has no business seeing a version of somebody that they may be about to reject.
+ */
 export async function isRaceVisibleMedia(pathname: string): Promise<boolean> {
   const rows = (await sql().query(
     `SELECT 1 FROM character_faces
-      WHERE $1 IN (game_texture_path, thumbnail_path) LIMIT 1`,
+      WHERE $1 IN (game_texture_path, thumbnail_path)
+         OR EXISTS (SELECT 1 FROM jsonb_each_text(thumbnails) AS t(size, path) WHERE t.path = $1)
+      LIMIT 1`,
     [pathname],
   )) as unknown[];
   return rows.length > 0;

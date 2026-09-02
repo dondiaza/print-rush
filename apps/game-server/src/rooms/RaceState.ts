@@ -35,6 +35,24 @@ export class PlayerStateSchema extends Schema {
   @type("uint8") checkpoint = 0;
   @type("uint8") racePosition = 1;
   @type("uint32") lastProcessedInput = 0;
+  /**
+   * The character, as the *server* resolved it.
+   *
+   * These replace broadcasting a whole `CharacterDefinition` that the joining client supplied. The
+   * appearance is a small JSON blob — about twenty-five short fields — which the receiving client
+   * turns into geometry with the same bridge the single-player game uses. The face is a media path
+   * on the studio, never a photograph.
+   *
+   * `characterId` is empty for a client racing with a locally authored character, which still works:
+   * nothing was migrated away.
+   */
+  @type("string") characterId = "";
+  @type("string") characterName = "Piloto";
+  @type("string") characterAppearance = "";
+  @type("string") faceTextureUrl = "";
+  @type("string") avatarThumbnailUrl = "";
+  @type("uint32") characterVersion = 0;
+  /** Kept for a client that has no persisted character and describes its own. */
   @type("string") characterDefinition = "";
   @type("string") kartDefinition = "";
   @type("string") characterHash = "";

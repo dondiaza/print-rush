@@ -40,6 +40,19 @@ export type CharacterVisual = {
   rightArm: TransformNode;
   /** Torso leans under lateral load. */
   spine: TransformNode;
+  /**
+   * Brows and mouth, for expressions. Empty on a photographic face and at low quality, where they
+   * would cost draw calls for detail nobody can see.
+   */
+  brows: Mesh[];
+  mouth: Mesh | null;
+  /**
+   * The rig's own blend state, so posture eases toward its target instead of snapping.
+   *
+   * Stored on the visual rather than in the caller because the caller is a render loop that has no
+   * business owning animation state, and because two drivers must blend independently.
+   */
+  blend: { headX: number; headY: number; headZ: number; spineX: number; spineZ: number; armL: number; armR: number; brow: number; mouth: number };
 };
 
 export type CharacterBuildOptions = {
@@ -268,6 +281,8 @@ export function buildCharacter(
   const headWhite: Mesh[] = [];
   const headIris: Mesh[] = [];
   const eyelids: Mesh[] = [];
+  const brows: Mesh[] = [];
+  let mouthMesh: Mesh | null = null;
 
   const skull = ellipsoid(
     scene,
@@ -311,7 +326,21 @@ export function buildCharacter(
     );
     brow.rotation.y = Math.PI / 2;
     brow.position.set(0, headHeight * (0.1 + face.foreheadHeight * 0.06), headHeight * 0.33);
-    headSkin.push(brow);
+    /**
+     * Left out of the merged head so it can be animated.
+     *
+     * Merging is what keeps a head at one draw call, and everything else on it still is. The brow is
+     * the exception because an expression needs it to move, and a merged mesh has no separable
+     * parts. Two extra draw calls per character at HIGH — the brow and the mouth — against a
+     * triangle budget it does not touch, which is a trade worth naming rather than hiding.
+     */
+    brow.parent = head;
+    brow.material = colors.skin;
+    brow.receiveShadows = true;
+    brow.isPickable = false;
+    brows.push(brow);
+    // Recorded so the animator can offset from the authored position rather than from zero.
+    brow.metadata = { restY: brow.position.y, restRotZ: brow.rotation.z };
 
     // Cheeks, driven by the schema's cheekVolume which V4 only used to scale the whole head.
     for (const side of [-1, 1] as const) {
@@ -445,7 +474,17 @@ export function buildCharacter(
   });
   mouth.position.set(0, -headHeight * (0.18 + face.mouth.height * 0.06), headHeight * 0.3);
   mouth.rotation.x = -face.mouth.curve * 0.5;
-  headDark.push(mouth);
+  if (detailed) {
+    // Kept separate for the same reason as the brow: a curve that cannot change is not an
+    // expression. At lower quality it merges into the head and the face stays still.
+    mouth.parent = head;
+    mouth.material = colors.dark;
+    mouth.isPickable = false;
+    mouth.metadata = { restRotX: mouth.rotation.x, restY: mouth.position.y };
+    mouthMesh = mouth;
+  } else {
+    headDark.push(mouth);
+  }
 
   // ------------------------------------------------------------------ ears
   for (const side of [-1, 1] as const) {
@@ -727,8 +766,48 @@ export function buildCharacter(
   attach(headIris, colors.iris, head, "head-iris");
   attach(headDark, colors.dark, head, "head-dark");
 
-  return { root, head, eyelids, leftArm: arms.left, rightArm: arms.right, spine };
+  return {
+    root,
+    head,
+    eyelids,
+    leftArm: arms.left,
+    rightArm: arms.right,
+    spine,
+    brows,
+    mouth: mouthMesh,
+    // Starts at rest, so the first frame does not blend in from an arbitrary posture.
+    blend: { headX: 0, headY: 0, headZ: 0, spineX: 0, spineZ: 0, armL: 0, armR: 0, brow: 0, mouth: 0 },
+  };
 }
+
+/**
+ * What the driver is doing.
+ *
+ * Poses rather than clips. There is no skeletal animation system here — the rig is five transform
+ * nodes — so a "state" is a target posture the driver blends toward, layered on top of the
+ * continuous steering and lean. That is a real constraint honestly named, and for a driver seen from
+ * behind at speed it is also most of what a clip would have bought.
+ */
+export type DriverState =
+  | "IDLE"
+  | "DRIVE"
+  | "DRIFT_LEFT"
+  | "DRIFT_RIGHT"
+  | "BOOST"
+  | "JUMP"
+  | "HIT"
+  | "SPIN"
+  | "VICTORY"
+  | "DEFEAT";
+
+/**
+ * A face, when the character has generated features rather than a photograph.
+ *
+ * Driven through the brow and mouth nodes. A photographic face is a fixed texture and cannot change
+ * expression — the styling pass remaps colour, it does not repose a mouth — so on a photo character
+ * these are simply inert, which is stated here rather than left to be discovered.
+ */
+export type DriverExpression = "NEUTRAL" | "HAPPY" | "FOCUSED" | "SURPRISED" | "ANGRY";
 
 export type CharacterAnimationInput = {
   /** Steering input, -1..1. Turns the head into the corner and rotates the arms. */
@@ -739,6 +818,70 @@ export type CharacterAnimationInput = {
   time: number;
   /** 0..1, raised briefly by an impact so the driver flinches. */
   flinch?: number;
+  /** The posture to blend toward. Defaults to `DRIVE`. */
+  state?: DriverState;
+  /** Defaults to one derived from the state, so a caller need not think about it. */
+  expression?: DriverExpression;
+};
+
+/**
+ * The posture each state targets, as offsets on the rig.
+ *
+ * Written as data rather than as a switch because that is what makes it tunable: every value here is
+ * a number somebody can change while watching the result, and the blend below treats them all the
+ * same.
+ */
+const POSES: Record<DriverState, {
+  headX: number; headY: number; headZ: number;
+  spineX: number; spineZ: number;
+  armL: number; armR: number;
+  /** How fast the driver reaches this posture, per second. A hit snaps; a victory settles. */
+  rate: number;
+}> = {
+  IDLE:        { headX: 0,     headY: 0,     headZ: 0,     spineX: 0,     spineZ: 0,     armL: 0,     armR: 0,     rate: 5 },
+  DRIVE:       { headX: 0,     headY: 0,     headZ: 0,     spineX: 0.04,  spineZ: 0,     armL: 0,     armR: 0,     rate: 6 },
+  // Leaning into the slide, looking where the kart is going rather than where it points.
+  DRIFT_LEFT:  { headX: -0.05, headY: -0.34, headZ: 0.16,  spineX: 0.06,  spineZ: 0.2,   armL: -0.22, armR: 0.3,   rate: 9 },
+  DRIFT_RIGHT: { headX: -0.05, headY: 0.34,  headZ: -0.16, spineX: 0.06,  spineZ: -0.2,  armL: 0.3,   armR: -0.22, rate: 9 },
+  // Pressed back into the seat.
+  BOOST:       { headX: 0.1,   headY: 0,     headZ: 0,     spineX: -0.12, spineZ: 0,     armL: -0.16, armR: -0.16, rate: 12 },
+  // Bracing, arms up, chin tucked.
+  JUMP:        { headX: -0.14, headY: 0,     headZ: 0,     spineX: -0.06, spineZ: 0,     armL: -0.42, armR: -0.42, rate: 10 },
+  HIT:         { headX: 0.36,  headY: 0.14,  headZ: 0.22,  spineX: 0.24,  spineZ: 0.16,  armL: 0.5,   armR: 0.16,  rate: 18 },
+  SPIN:        { headX: 0.12,  headY: -0.5,  headZ: 0.3,   spineX: 0.1,   spineZ: 0.3,   armL: 0.34,  armR: 0.34,  rate: 8 },
+  // Both arms up, chest open, head back.
+  VICTORY:     { headX: -0.3,  headY: 0,     headZ: 0,     spineX: -0.18, spineZ: 0,     armL: -1.15, armR: -1.15, rate: 4 },
+  // Shoulders forward, head down.
+  DEFEAT:      { headX: 0.34,  headY: 0,     headZ: 0,     spineX: 0.26,  spineZ: 0,     armL: 0.22,  armR: 0.22,  rate: 3 },
+};
+
+/** The expression a state implies, unless the caller asks for another. */
+const STATE_EXPRESSION: Record<DriverState, DriverExpression> = {
+  IDLE: "NEUTRAL",
+  DRIVE: "NEUTRAL",
+  DRIFT_LEFT: "FOCUSED",
+  DRIFT_RIGHT: "FOCUSED",
+  BOOST: "HAPPY",
+  JUMP: "SURPRISED",
+  HIT: "SURPRISED",
+  SPIN: "SURPRISED",
+  VICTORY: "HAPPY",
+  DEFEAT: "ANGRY",
+};
+
+/**
+ * Brow lift and mouth curve per expression, both -1..1.
+ *
+ * Two numbers, because two are enough: a brow that rises or knots and a mouth that curves up or
+ * down carry every expression in this list at the size a driver is actually seen. More parameters
+ * would be more to tune and no more legible.
+ */
+const EXPRESSIONS: Record<DriverExpression, { brow: number; mouth: number }> = {
+  NEUTRAL: { brow: 0, mouth: 0 },
+  HAPPY: { brow: 0.35, mouth: 0.85 },
+  FOCUSED: { brow: -0.6, mouth: -0.2 },
+  SURPRISED: { brow: 0.9, mouth: 0.3 },
+  ANGRY: { brow: -0.9, mouth: -0.7 },
 };
 
 /**
@@ -747,19 +890,73 @@ export type CharacterAnimationInput = {
  */
 export function animateCharacter(visual: CharacterVisual, input: CharacterAnimationInput): void {
   const flinch = input.flinch ?? 0;
+  const state = input.state ?? "DRIVE";
+  const pose = POSES[state];
+  const expression = EXPRESSIONS[input.expression ?? STATE_EXPRESSION[state]];
 
-  // Head turns into the corner and looks slightly down under braking load.
-  visual.head.rotation.y = input.steer * 0.42;
-  visual.head.rotation.z = -input.steer * 0.14 + flinch * 0.2;
-  visual.head.rotation.x = flinch * 0.3;
+  /**
+   * The posture blend.
+   *
+   * Eased toward the target rather than assigned, so a hit does not teleport the driver and a
+   * victory unfolds. `dt` is derived from the frame rather than passed in, because every caller is a
+   * render loop and none of them tracked it — asking them to would have meant four call sites
+   * getting it subtly wrong.
+   */
+  const now = input.time;
+  const previous = (visual.blend as { time?: number }).time ?? now;
+  // Clamped: a tab that was in the background for a minute must not blend a whole second of pose in
+  // one frame, which reads as a snap.
+  const dt = Math.min(0.1, Math.max(0, now - previous));
+  (visual.blend as { time?: number }).time = now;
+  const k = 1 - Math.exp(-pose.rate * dt);
+  const b = visual.blend;
+  b.headX += (pose.headX - b.headX) * k;
+  b.headY += (pose.headY - b.headY) * k;
+  b.headZ += (pose.headZ - b.headZ) * k;
+  b.spineX += (pose.spineX - b.spineX) * k;
+  b.spineZ += (pose.spineZ - b.spineZ) * k;
+  b.armL += (pose.armL - b.armL) * k;
+  b.armR += (pose.armR - b.armR) * k;
+  b.brow += (expression.brow - b.brow) * k;
+  b.mouth += (expression.mouth - b.mouth) * k;
+
+  // Head turns into the corner and looks slightly down under braking load, plus the pose on top.
+  visual.head.rotation.y = input.steer * 0.42 + b.headY;
+  visual.head.rotation.z = -input.steer * 0.14 + flinch * 0.2 + b.headZ;
+  visual.head.rotation.x = flinch * 0.3 + b.headX;
 
   // Torso leans with the slide.
-  visual.spine.rotation.z = input.lean * 0.45;
-  visual.spine.rotation.x = flinch * 0.16;
+  visual.spine.rotation.z = input.lean * 0.45 + b.spineZ;
+  visual.spine.rotation.x = flinch * 0.16 + b.spineX;
 
   // Arms follow the wheel: the inside arm pulls back, the outside pushes forward.
-  visual.leftArm.rotation.x = input.steer * 0.34;
-  visual.rightArm.rotation.x = -input.steer * 0.34;
+  visual.leftArm.rotation.x = input.steer * 0.34 + b.armL;
+  visual.rightArm.rotation.x = -input.steer * 0.34 + b.armR;
+
+  /**
+   * The expression, on the two nodes that carry one.
+   *
+   * A brow lifts and tilts; a mouth curves. Both offset from the authored rest position recorded at
+   * build time, so a character with naturally angled brows keeps them and the expression is added
+   * rather than substituted. Absent on a photographic face and at low quality, where these lists
+   * are empty and the loop simply does nothing.
+   */
+  for (const [index, brow] of visual.brows.entries()) {
+    const rest = brow.metadata as { restY: number; restRotZ: number } | undefined;
+    if (!rest) continue;
+    const side = index === 0 ? 1 : -1;
+    brow.position.y = rest.restY + b.brow * 0.012;
+    // A knotted brow tilts inward; a surprised one stays level and just rises.
+    brow.rotation.z = rest.restRotZ + (b.brow < 0 ? b.brow * 0.22 * side : 0);
+  }
+  if (visual.mouth) {
+    const rest = visual.mouth.metadata as { restRotX: number; restY: number } | undefined;
+    if (rest) {
+      visual.mouth.rotation.x = rest.restRotX - b.mouth * 0.42;
+      // An open, surprised mouth drops slightly as well as curving.
+      visual.mouth.position.y = rest.restY - Math.max(0, b.mouth) * 0.004;
+    }
+  }
 
   /**
    * Blink. A pseudo-random cadence rather than a fixed interval, so two drivers on screen never

@@ -219,3 +219,105 @@ describe("character assembly", () => {
 });
 
 void bounds;
+
+describe("driver poses and expressions", () => {
+  /**
+   * Poses blend rather than snap.
+   *
+   * The rig has no animation clips — a state is a target posture eased toward over time — so the
+   * property to assert is that repeated frames move *toward* the target and arrive, rather than
+   * jumping there on the first call. A snap is what makes a driver look like a mannequin being
+   * repositioned.
+   */
+  it("eases toward a pose instead of snapping to it", () => {
+    const scene = new Scene(new NullEngine());
+    const visual = buildCharacter(scene, CharacterPresets[0]!, "pose-blend", { quality: "HIGH" });
+
+    animateCharacter(visual, { steer: 0, lean: 0, time: 0, state: "VICTORY" });
+    const firstFrame = visual.leftArm.rotation.x;
+    // One frame in, the arms are on their way up but nowhere near the target of -1.15.
+    expect(Math.abs(firstFrame)).toBeLessThan(0.6);
+
+    for (let step = 1; step <= 90; step += 1) {
+      animateCharacter(visual, { steer: 0, lean: 0, time: step / 60, state: "VICTORY" });
+    }
+    // A second and a half later it has arrived.
+    expect(visual.leftArm.rotation.x).toBeLessThan(-0.9);
+  });
+
+  it("gives each state a distinguishable posture", () => {
+    const scene = new Scene(new NullEngine());
+    const readings = new Map<string, string>();
+
+    for (const state of ["DRIVE", "DRIFT_LEFT", "DRIFT_RIGHT", "BOOST", "JUMP", "HIT", "SPIN", "VICTORY", "DEFEAT"] as const) {
+      const visual = buildCharacter(scene, CharacterPresets[0]!, `pose-${state}`, { quality: "HIGH" });
+      // Settle, then record the whole rig rounded, so two states that happen to share one joint are
+      // still told apart by the rest.
+      for (let step = 0; step <= 120; step += 1) {
+        animateCharacter(visual, { steer: 0, lean: 0, time: step / 60, state });
+      }
+      readings.set(
+        state,
+        [
+          visual.head.rotation.x,
+          visual.head.rotation.y,
+          visual.head.rotation.z,
+          visual.spine.rotation.x,
+          visual.spine.rotation.z,
+          visual.leftArm.rotation.x,
+          visual.rightArm.rotation.x,
+        ]
+          .map((value) => value.toFixed(2))
+          .join(","),
+      );
+    }
+    // Nine states, nine distinct postures. A duplicate here means a pose table entry was copied and
+    // never edited, which is invisible in review and obvious in a race.
+    expect(new Set(readings.values()).size).toBe(readings.size);
+  });
+
+  /**
+   * The drift poses mirror each other.
+   *
+   * Not decoration: a driver who leans the same way into both directions reads as a bug immediately,
+   * and it is the kind of sign error that survives a visual check on one corner.
+   */
+  it("mirrors the two drift directions", () => {
+    const scene = new Scene(new NullEngine());
+    const left = buildCharacter(scene, CharacterPresets[0]!, "drift-l", { quality: "HIGH" });
+    const right = buildCharacter(scene, CharacterPresets[0]!, "drift-r", { quality: "HIGH" });
+    for (let step = 0; step <= 120; step += 1) {
+      animateCharacter(left, { steer: 0, lean: 0, time: step / 60, state: "DRIFT_LEFT" });
+      animateCharacter(right, { steer: 0, lean: 0, time: step / 60, state: "DRIFT_RIGHT" });
+    }
+    expect(left.head.rotation.y).toBeCloseTo(-right.head.rotation.y, 2);
+    expect(left.spine.rotation.z).toBeCloseTo(-right.spine.rotation.z, 2);
+  });
+
+  it("moves the brow and the mouth for an expression, and only at detailed quality", () => {
+    const scene = new Scene(new NullEngine());
+    const detailed = buildCharacter(scene, CharacterPresets[0]!, "expr-high", { quality: "HIGH" });
+    expect(detailed.brows.length, "a detailed head keeps its brows animatable").toBeGreaterThan(0);
+    expect(detailed.mouth, "and its mouth").not.toBeNull();
+
+    const restMouth = detailed.mouth!.rotation.x;
+    for (let step = 0; step <= 120; step += 1) {
+      animateCharacter(detailed, { steer: 0, lean: 0, time: step / 60, state: "DRIVE", expression: "HAPPY" });
+    }
+    const happyMouth = detailed.mouth!.rotation.x;
+    expect(happyMouth).not.toBeCloseTo(restMouth, 3);
+
+    for (let step = 121; step <= 300; step += 1) {
+      animateCharacter(detailed, { steer: 0, lean: 0, time: step / 60, state: "DRIVE", expression: "ANGRY" });
+    }
+    // Angry curves the other way from happy, which is the whole point of the parameter.
+    expect(detailed.mouth!.rotation.x).toBeGreaterThan(happyMouth);
+
+    // At low quality the face merges into the head and there is nothing to animate — which must be
+    // a no-op rather than a crash.
+    const cheap = buildCharacter(scene, CharacterPresets[0]!, "expr-low", { quality: "LOW" });
+    expect(cheap.brows).toEqual([]);
+    expect(cheap.mouth).toBeNull();
+    expect(() => animateCharacter(cheap, { steer: 0, lean: 0, time: 1, state: "VICTORY" })).not.toThrow();
+  });
+});
