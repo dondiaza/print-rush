@@ -184,7 +184,7 @@ type Boot = {
  * dropped from the total rather than stalling the bar. That is why this can list what the race wants
  * without first checking what exists.
  */
-function assetIdsForRace(catalog: AssetCatalog, theme: string, livery: string): string[] {
+function assetIdsForRace(catalog: AssetCatalog, theme: string, liveries: readonly string[]): string[] {
   const circuit = circuitKeyForTheme(theme);
   // Only the decal families this theme actually scatters. Downloading all seven would add weight for
   // marks that would never be placed — an office floor is not going to get an ink splash.
@@ -199,8 +199,12 @@ function assetIdsForRace(catalog: AssetCatalog, theme: string, livery: string): 
       return asset.circuit === undefined || asset.circuit === circuit;
     })
     .map((asset) => asset.id);
-  const wrap = catalog.wrap(livery);
-  if (wrap) ids.push(wrap.id);
+  // Every livery on the grid, not just the player's. Four wraps is under a megabyte and it is the
+  // difference between a field of four distinct karts and one painted kart plus three plain ones.
+  for (const livery of new Set(liveries)) {
+    const wrap = catalog.wrap(livery);
+    if (wrap) ids.push(wrap.id);
+  }
   return ids;
 }
 
@@ -333,9 +337,7 @@ export class GameRuntime {
         character: CharacterPresets[(index + 1) % CharacterPresets.length]!,
         kart: botKart,
         quality: quality === "HIGH" || quality === "ULTRA" ? "MEDIUM" : "LOW",
-        // A bot's wrap is applied only if the preset names one that is already resident. Fetching
-        // three more liveries to dress the opposition would put real seconds on the loading screen
-        // for karts the player mostly sees from behind.
+        // Preloaded alongside the player's, so the grid is four distinct karts.
         wrap: catalog?.wrapTexture(botKart.livery ?? "NONE") ?? null,
       });
       // Only the player casts into the shadow map on lower tiers; four full karts of casters was one
@@ -405,8 +407,11 @@ export class GameRuntime {
 
     if (catalog) {
       const theme = options.trackDefinition.baked.blueprint.theme;
-      const livery = options.kartDefinition.livery ?? "NONE";
-      const ids = assetIdsForRace(catalog, theme, livery);
+      const liveries = [
+        options.kartDefinition.livery ?? "NONE",
+        ...BotSkills.map((_skill, index) => KartPresets[(index + 1) % KartPresets.length]!.livery ?? "NONE"),
+      ];
+      const ids = assetIdsForRace(catalog, theme, liveries);
       await catalog.preload(scene, ids, (loaded, total, id) => {
         options.onProgress?.({ loaded, total, label: labelForAsset(id) });
       });

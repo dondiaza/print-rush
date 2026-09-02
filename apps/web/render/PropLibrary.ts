@@ -1,5 +1,5 @@
 import { Mesh, Scene, Vector2, Vector3 } from "@babylonjs/core";
-import { MaterialLibrary, type MaterialClass } from "./MaterialLibrary";
+import { MaterialLibrary, type MaterialClass, type MaterialRequest } from "./MaterialLibrary";
 import { beveledBox, ellipsoid, lofted, mergeParts, revolve, tube } from "./Geometry";
 
 /**
@@ -36,7 +36,77 @@ export type PropSpec = {
   color: string;
   kind: PropKind;
   weight: number;
+  /**
+   * Baked material dressing this prop's principal mass — the ink drum's ink, the display's printed
+   * cloth, the racking's painted steel. Optional: without one the prop takes the theme's colour over
+   * the class's baked relief, which is how a hundred boxes in six colours stay six materials.
+   *
+   * It may only name an asset in the shared set or in this circuit's own, because another circuit's
+   * assets are never downloaded. A test enforces that.
+   */
+  texture?: string;
 };
+
+/**
+ * What the theme chose for a prop, as opposed to what the prop physically is.
+ *
+ * The distinction runs through every builder below and it is the whole reason `materialClass` on a
+ * spec was dead configuration until now. A prop has two kinds of surface:
+ *
+ *  - its **principal mass**, which is what the theme is actually specifying when it writes
+ *    `{ materialClass: "INK", kind: "BOX" }` — that is an ink drum, and class, colour and print all
+ *    come from the spec;
+ *  - its **trim**, whose material is fixed by what the part is. The shirts hanging on a clothing
+ *    rail are cloth whatever the rail is made of, and a box's flaps are cardboard even when the
+ *    theme calls the box paper. Trim takes the theme's colour and nothing else.
+ *
+ * Getting this backwards is how you end up with wooden shirts.
+ */
+export type PropSkin = Pick<PropSpec, "materialClass" | "color"> & { texture?: string };
+
+/** The prop's principal mass: class, colour and baked print all come from the theme. */
+function principal(skin: PropSkin, extra: { seed?: number; tile?: number } = {}): MaterialRequest {
+  const request: MaterialRequest = { materialClass: skin.materialClass, color: skin.color };
+  if (skin.texture !== undefined) request.texture = skin.texture;
+  if (extra.seed !== undefined) request.seed = extra.seed;
+  if (extra.tile !== undefined) request.tile = extra.tile;
+  return request;
+}
+
+/** Trim: the part decides its own material, the theme only decides its colour. */
+function trim(
+  materialClass: MaterialClass,
+  skin: PropSkin,
+  extra: { seed?: number; tile?: number } = {},
+): MaterialRequest {
+  const request: MaterialRequest = { materialClass, color: skin.color };
+  if (extra.seed !== undefined) request.seed = extra.seed;
+  if (extra.tile !== undefined) request.tile = extra.tile;
+  return request;
+}
+
+/** Stable key for a source mesh. Two specs of one kind with different prints need two sources. */
+export function propSourceKey(kind: PropKind, texture?: string): string {
+  return `${kind}|${texture ?? ""}`;
+}
+
+/**
+ * The distinct source meshes a set of specs needs, in the order they should be built.
+ *
+ * Pulled out as a pure function so it can be tested without a GPU, which matters more than it
+ * sounds: when the source map went from being keyed by kind to being keyed by kind-and-print, every
+ * `get(spec.kind)` still compiled — `PropKind` is a string — and returned `undefined`, which would
+ * have shipped a circuit with no trackside props at all and no error anywhere. The scatter and the
+ * builder now derive their keys from this one function.
+ */
+export function propSourceSpecs(specs: readonly PropSpec[]): Array<[string, PropSpec]> {
+  const seen = new Map<string, PropSpec>();
+  for (const spec of specs) {
+    const key = propSourceKey(spec.kind, spec.texture);
+    if (!seen.has(key)) seen.set(key, spec);
+  }
+  return [...seen];
+}
 
 type BuildContext = {
   scene: Scene;
@@ -50,7 +120,7 @@ type BuildContext = {
  * A cardboard box with the four things that stop cardboard reading as a painted cube: creased
  * flaps, a tape strip down the seam, a shipping label, and a lid that does not sit perfectly flush.
  */
-function buildBox(context: BuildContext, color: string): Mesh {
+function buildBox(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed } = context;
   const parts: Mesh[] = [];
 
@@ -62,7 +132,7 @@ function buildBox(context: BuildContext, color: string): Mesh {
     uScale: 1.1,
     vScale: 1,
   });
-  body.material = materials.get({ materialClass: "CARDBOARD", color });
+  body.material = materials.get(principal(skin));
   parts.push(body);
 
   if (detailed) {
@@ -76,7 +146,7 @@ function buildBox(context: BuildContext, color: string): Mesh {
       });
       flap.position.set(0, 0.49, side * 0.27);
       flap.rotation.x = side * 0.045;
-      flap.material = materials.get({ materialClass: "CARDBOARD", color, seed: 1 });
+      flap.material = materials.get(principal(skin, { seed: 1 }));
       parts.push(flap);
     }
 
@@ -111,10 +181,10 @@ function buildBox(context: BuildContext, color: string): Mesh {
  * A shelving unit: tubular uprights, cross braces, four decks, stock on the decks and a label strip
  * on the front edge. This is the object that makes a warehouse read as a warehouse.
  */
-function buildShelf(context: BuildContext, color: string): Mesh {
+function buildShelf(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed } = context;
   const parts: Mesh[] = [];
-  const frame = materials.get({ materialClass: "PAINTED_METAL", color });
+  const frame = materials.get(principal(skin));
   const deckMaterial = materials.get({ materialClass: "RAW_METAL", color: "#8f979f" });
 
   for (const side of [-1, 1] as const) {
@@ -191,10 +261,10 @@ function buildShelf(context: BuildContext, color: string): Mesh {
 }
 
 /** A pallet: chamfered planks on bearers, with the gaps a real pallet has. */
-function buildPallet(context: BuildContext, color: string): Mesh {
+function buildPallet(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials } = context;
   const parts: Mesh[] = [];
-  const material = materials.get({ materialClass: "PLASTIC", color });
+  const material = materials.get(principal(skin));
 
   for (let plank = -2; plank <= 2; plank += 1) {
     const top = beveledBox(scene, `pallet-plank-${plank}`, {
@@ -222,10 +292,10 @@ function buildPallet(context: BuildContext, color: string): Mesh {
 }
 
 /** An industrial machine: lofted body, revolved hopper, pipework, and a lit control panel. */
-function buildMachine(context: BuildContext, color: string): Mesh {
+function buildMachine(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed, segments } = context;
   const parts: Mesh[] = [];
-  const shell = materials.get({ materialClass: "PAINTED_METAL", color });
+  const shell = materials.get(principal(skin));
   const steel = materials.get({ materialClass: "RAW_METAL", color: "#9fa6ad" });
 
   const body = lofted(
@@ -316,7 +386,7 @@ function buildMachine(context: BuildContext, color: string): Mesh {
 }
 
 /** A hanging or post-mounted sign: panel, frame and bracket. */
-function buildSign(context: BuildContext, color: string): Mesh {
+function buildSign(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials } = context;
   const parts: Mesh[] = [];
 
@@ -326,7 +396,7 @@ function buildSign(context: BuildContext, color: string): Mesh {
     depth: 0.09,
     bevel: 0.02,
   });
-  panel.material = materials.get({ materialClass: "PAPER", color });
+  panel.material = materials.get(principal(skin));
   parts.push(panel);
 
   // A frame around the panel reads as a fabricated sign rather than a floating rectangle.
@@ -356,7 +426,7 @@ function buildSign(context: BuildContext, color: string): Mesh {
 }
 
 /** A wall screen: bezel, inset emissive panel and a mount arm. */
-function buildScreen(context: BuildContext, color: string): Mesh {
+function buildScreen(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials } = context;
   const parts: Mesh[] = [];
 
@@ -377,7 +447,7 @@ function buildScreen(context: BuildContext, color: string): Mesh {
     bevel: 0.01,
   });
   panel.position.z = 0.1;
-  panel.material = materials.get({ materialClass: "SCREEN", color });
+  panel.material = materials.get(principal(skin));
   parts.push(panel);
 
   const arm = tube(
@@ -397,7 +467,7 @@ function buildScreen(context: BuildContext, color: string): Mesh {
  * A garment rail with hangers and shirts. This is the single most on-theme prop in the game and V4
  * drew it as a 0.14 x 2.3 x 0.14 box.
  */
-function buildRail(context: BuildContext, color: string): Mesh {
+function buildRail(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed } = context;
   const parts: Mesh[] = [];
   const steel = materials.get({ materialClass: "RAW_METAL", color: "#b6bcc4" });
@@ -466,12 +536,10 @@ function buildRail(context: BuildContext, color: string): Mesh {
     shirt.rotation.x = -Math.PI / 2;
     shirt.position.set(x, 1.24, 0);
     shirt.rotation.y = ((index * 13) % 7) * 0.04 - 0.12;
-    shirt.material = materials.get({
-      materialClass: "FABRIC",
-      color,
-      seed: index % 3,
-      tile: 0.3,
-    });
+    // Cloth, whatever the rail is made of. This is the case that makes `trim` necessary: the
+    // Megastore declares its rails as WOOD, and taking the class from the spec here would hang
+    // wooden shirts on them.
+    shirt.material = materials.get(trim("FABRIC", skin, { seed: index % 3, tile: 0.3 }));
     parts.push(shirt);
   }
 
@@ -479,7 +547,7 @@ function buildRail(context: BuildContext, color: string): Mesh {
 }
 
 /** A potted plant: revolved pot, soil, and leaves as flattened ellipsoids on stems. */
-function buildPlant(context: BuildContext, color: string): Mesh {
+function buildPlant(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed, segments } = context;
   const parts: Mesh[] = [];
 
@@ -521,7 +589,7 @@ function buildPlant(context: BuildContext, color: string): Mesh {
     leaf.position.set(Math.sin(angle) * 0.2 * lean, 0.92, Math.cos(angle) * 0.2 * lean);
     leaf.rotation.z = Math.sin(angle) * lean * 0.6;
     leaf.rotation.x = -Math.cos(angle) * lean * 0.6;
-    leaf.material = materials.get({ materialClass: "FABRIC", color, seed: index % 3, tile: 0.5 });
+    leaf.material = materials.get(trim("FABRIC", skin, { seed: index % 3, tile: 0.5 }));
     parts.push(leaf);
   }
 
@@ -533,11 +601,11 @@ function buildPlant(context: BuildContext, color: string): Mesh {
  * silhouette with a head, shoulders, arms and legs, which is all that is needed at the distance a
  * crowd sits from the track. V4 used a single capsule.
  */
-function buildCrowd(context: BuildContext, color: string): Mesh {
+function buildCrowd(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials, detailed } = context;
   const parts: Mesh[] = [];
-  const shirt = materials.get({ materialClass: "FABRIC", color, tile: 0.3 });
-  const skin = materials.get({ materialClass: "PLASTIC", color: "#d99b72" });
+  const shirt = materials.get(trim("FABRIC", skin, { tile: 0.3 }));
+  const flesh = materials.get({ materialClass: "PLASTIC", color: "#d99b72" });
 
   const torso = lofted(
     scene,
@@ -556,7 +624,7 @@ function buildCrowd(context: BuildContext, color: string): Mesh {
 
   const head = ellipsoid(scene, "crowd-head", { x: 0.11, y: 0.13, z: 0.11 }, 10, 6);
   head.position.y = 1.52;
-  head.material = skin;
+  head.material = flesh;
   parts.push(head);
 
   if (detailed) {
@@ -591,7 +659,7 @@ function buildCrowd(context: BuildContext, color: string): Mesh {
 }
 
 /** A stack of crates strapped together. Cheap way to add mass beside the track. */
-function buildCrateStack(context: BuildContext, color: string): Mesh {
+function buildCrateStack(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials } = context;
   const parts: Mesh[] = [];
   for (let level = 0; level < 3; level += 1) {
@@ -606,7 +674,7 @@ function buildCrateStack(context: BuildContext, color: string): Mesh {
     // A stack that is not perfectly aligned reads as stacked rather than as one tall box.
     crate.rotation.y = ((level * 11) % 7) * 0.05 - 0.15;
     crate.position.x = ((level * 5) % 3) * 0.04 - 0.04;
-    crate.material = materials.get({ materialClass: "CARDBOARD", color, seed: level % 3 });
+    crate.material = materials.get(principal(skin, { seed: level % 3 }));
     parts.push(crate);
   }
   const strap = beveledBox(scene, "crate-strap", {
@@ -622,7 +690,7 @@ function buildCrateStack(context: BuildContext, color: string): Mesh {
 }
 
 /** A picking trolley: frame, wheels and a loaded shelf. */
-function buildTrolley(context: BuildContext, color: string): Mesh {
+function buildTrolley(context: BuildContext, skin: PropSkin): Mesh {
   const { scene, materials } = context;
   const parts: Mesh[] = [];
   const steel = materials.get({ materialClass: "RAW_METAL", color: "#9fa6ad" });
@@ -666,7 +734,7 @@ function buildTrolley(context: BuildContext, color: string): Mesh {
     bevel: 0.024,
   });
   load.position.y = 0.57;
-  load.material = materials.get({ materialClass: "CARDBOARD", color });
+  load.material = materials.get(trim("CARDBOARD", skin));
   parts.push(load);
 
   for (const side of [-1, 1] as const) {
@@ -693,7 +761,7 @@ function buildTrolley(context: BuildContext, color: string): Mesh {
   return mergeParts("prop-trolley", parts, true);
 }
 
-export type PropSource = { mesh: Mesh; kind: PropKind; footprint: number };
+export type PropSource = { mesh: Mesh; kind: PropKind; footprint: number; textured: boolean };
 
 /**
  * Builds one hidden source mesh per prop kind. Callers instance from these.
@@ -704,7 +772,7 @@ export function createPropSources(
   materials: MaterialLibrary,
   specs: readonly PropSpec[],
   quality: "LOW" | "MEDIUM" | "HIGH" | "ULTRA",
-): Map<PropKind, PropSource> {
+): Map<string, PropSource> {
   const context: BuildContext = {
     scene,
     materials,
@@ -712,18 +780,18 @@ export function createPropSources(
     segments: quality === "LOW" ? 8 : quality === "MEDIUM" ? 12 : 16,
   };
 
-  const builders: Record<PropKind, (color: string) => Mesh> = {
-    BOX: (color) => buildBox(context, color),
-    SHELF: (color) => buildShelf(context, color),
-    PALLET: (color) => buildPallet(context, color),
-    MACHINE: (color) => buildMachine(context, color),
-    SIGN: (color) => buildSign(context, color),
-    SCREEN: (color) => buildScreen(context, color),
-    RAIL: (color) => buildRail(context, color),
-    PLANT: (color) => buildPlant(context, color),
-    CROWD: (color) => buildCrowd(context, color),
-    CRATE_STACK: (color) => buildCrateStack(context, color),
-    TROLLEY: (color) => buildTrolley(context, color),
+  const builders: Record<PropKind, (skin: PropSkin) => Mesh> = {
+    BOX: (skin) => buildBox(context, skin),
+    SHELF: (skin) => buildShelf(context, skin),
+    PALLET: (skin) => buildPallet(context, skin),
+    MACHINE: (skin) => buildMachine(context, skin),
+    SIGN: (skin) => buildSign(context, skin),
+    SCREEN: (skin) => buildScreen(context, skin),
+    RAIL: (skin) => buildRail(context, skin),
+    PLANT: (skin) => buildPlant(context, skin),
+    CROWD: (skin) => buildCrowd(context, skin),
+    CRATE_STACK: (skin) => buildCrateStack(context, skin),
+    TROLLEY: (skin) => buildTrolley(context, skin),
   };
 
   const footprints: Record<PropKind, number> = {
@@ -740,20 +808,29 @@ export function createPropSources(
     TROLLEY: 0.9,
   };
 
-  const sources = new Map<PropKind, PropSource>();
-  // Only build the kinds this theme actually uses; a theme with no crowd should not pay for one.
-  const kinds = new Set(specs.map((spec) => spec.kind));
-  for (const kind of kinds) {
-    const spec = specs.find((entry) => entry.kind === kind)!;
-    const mesh = builders[kind](spec.color);
-    mesh.name = `prop-source-${kind}`;
+  const sources = new Map<string, PropSource>();
+  /**
+   * One source per kind *and print*, not per kind.
+   *
+   * Per-instance colour lets one source serve every colour of its kind, which is what keeps the
+   * material budget survivable on a densely dressed circuit. A baked print cannot be shared that
+   * way: the artwork is in the texture, so two specs that differ by print are two sources. Specs
+   * that differ only by colour still share one, which is the case that actually matters — the
+   * Megastore's four shirt displays are one mesh.
+   */
+  for (const [key, spec] of propSourceSpecs(specs)) {
+    const kind = spec.kind;
+    const skin: PropSkin = { materialClass: spec.materialClass, color: spec.color };
+    if (spec.texture !== undefined) skin.texture = spec.texture;
+    const mesh = builders[kind](skin);
+    mesh.name = `prop-source-${key}`;
     mesh.isVisible = false;
     mesh.isPickable = false;
     mesh.receiveShadows = true;
     // Per-instance colour lets one source serve every colour variation of its kind, which is how
     // the art bible's 40-material budget survives a densely dressed circuit.
     mesh.registerInstancedBuffer("color", 4);
-    sources.set(kind, { mesh, kind, footprint: footprints[kind] });
+    sources.set(key, { mesh, kind, footprint: footprints[kind], textured: spec.texture !== undefined });
   }
   return sources;
 }

@@ -38,6 +38,7 @@ type ManifestAsset = {
   bytes: number;
   usage: string;
   status: string;
+  download: "always" | "track" | "kart";
 };
 
 const manifest: { assets: ManifestAsset[]; totalBytes: number; counts: Record<string, number> } =
@@ -101,17 +102,24 @@ describe("manifest", () => {
     }
   });
 
-  it("stays inside the per-scope download budget", () => {
-    const byScope = new Map<string, number>();
+  /**
+   * Every entry says when it is fetched.
+   *
+   * The budget itself is asserted in `catalog.test.ts`, against what a race actually downloads.
+   * What matters here is that the tier is present and consistent with the asset's scope, because a
+   * mislabelled tier would make that budget measure the wrong thing.
+   */
+  it("labels every asset with a download tier that matches its scope", () => {
     for (const asset of manifest.assets) {
-      const scope = asset.circuit ?? "common";
-      byScope.set(scope, (byScope.get(scope) ?? 0) + asset.bytes);
-    }
-    // The shared set downloads once; a circuit's set downloads when it is selected.
-    expect(byScope.get("common")!).toBeLessThan(6 * 1024 * 1024);
-    for (const [scope, bytes] of byScope) {
-      if (scope === "common") continue;
-      expect(bytes, `${scope} weight`).toBeLessThan(4 * 1024 * 1024);
+      expect(["always", "track", "kart"], `${asset.id} tier`).toContain(asset.download);
+      if (asset.download === "always") {
+        // Fetched every session, so it cannot belong to one circuit.
+        expect(asset.circuit, `${asset.id} is shared but circuit-scoped`).toBeUndefined();
+      }
+      if (asset.circuit !== undefined) {
+        expect(asset.download, `${asset.id} belongs to ${asset.circuit}`).toBe("track");
+      }
+      if (asset.category === "kart-wrap") expect(asset.download).toBe("kart");
     }
   });
 });
@@ -177,6 +185,23 @@ describe("materials tile seamlessly", () => {
     const metalMean = statsOf(metal).mean[0]!;
     // The art bible's whole point about material differentiation, asserted on the actual pixels.
     expect(fabricMean).toBeGreaterThan(metalMean + 60);
+  });
+
+  /**
+   * The printed cloth actually has a print on it.
+   *
+   * A motif generator that silently produced nothing would leave a texture that still passes every
+   * other check here — it would tile, it would not be flat, its normal would be valid — and would
+   * just be blank cloth. Comparing against the plain weave is what makes the print falsifiable:
+   * measured, the range goes from 61 on plain fabric to between 164 and 236 with a graphic on it.
+   */
+  it("puts a real print on the printed fabrics", () => {
+    const plain = channelRange(statsOf(manifest.assets.find((a) => a.id === "mat_fabric_white_basecolor")!));
+    const printed = manifest.assets.filter((asset) => asset.id.startsWith("mat_fabricprint_") && asset.id.endsWith("_basecolor"));
+    expect(printed.length, "no printed fabrics baked").toBe(4);
+    for (const asset of printed) {
+      expect(channelRange(statsOf(asset)), `${asset.id} ink contrast`).toBeGreaterThan(plain * 2);
+    }
   });
 
   it("gives wet ink the smoothest surface of all, because that is why it has no grip", () => {
@@ -320,6 +345,14 @@ describe("backdrops", () => {
 describe("asset integration", () => {
   const source: string = readSourceText([join(__dirname, ".."), join(__dirname, "..", "..", "..", "packages")]);
   const ids = new Set(manifest.assets.map((asset) => asset.id));
+  const CIRCUIT_KEY_BY_THEME: Record<string, string> = {
+    FLAGSHIP: "store",
+    WAREHOUSE: "warehouse",
+    PRINT_FACTORY: "screenprinting",
+    OFFICE: "office",
+    MANGA: "manga",
+    GREYBOX: "greybox",
+  };
 
   /**
    * The one that catches an invented filename.
@@ -383,12 +416,47 @@ describe("asset integration", () => {
   });
 
   /**
-   * A floor on how much of the bake the app actually reaches.
+   * A theme may only name assets it will have.
    *
-   * Not 100 %: ten colour variants are baked for surfaces that currently take their colour from the
-   * theme, and that is a reasonable state for them to be in. The floor exists so that a regression
-   * which quietly unhooks the asset pipeline — a renamed constant, a dropped catalog — fails here
-   * instead of shipping a game that looks flat for no visible reason.
+   * The trap this closes: `mat_paintedmetal_press` is a perfectly real file, and naming it from the
+   * Manga theme would typecheck, pass the "no invented ids" test, and then silently fall back to the
+   * procedural generator forever — because the factory's assets are never downloaded for a race in
+   * the convention hall. Nothing would ever surface it. So the rule is checked directly: a theme's
+   * textures must be in the shared set or in that theme's own circuit.
+   */
+  it("never lets a theme name another circuit's asset", () => {
+    const scopeOf = new Map(manifest.assets.map((asset) => [asset.id, asset.circuit] as const));
+    const block = source.slice(source.indexOf("const THEME_VISUALS"));
+    const themes = [...block.matchAll(/^  ([A-Z_]+): \{$/gm)];
+    expect(themes.length, "no themes parsed").toBeGreaterThanOrEqual(5);
+
+    for (const [index, match] of themes.entries()) {
+      const theme = match[1]!;
+      const start = match.index!;
+      const end = index + 1 < themes.length ? themes[index + 1]!.index! : block.indexOf("\n};", start);
+      const circuit = CIRCUIT_KEY_BY_THEME[theme];
+      expect(circuit, `${theme} has no circuit key`).toBeDefined();
+
+      for (const named of block.slice(start, end).matchAll(/texture: "(mat_[a-z0-9_]+)"/g)) {
+        const base = `${named[1]!}_basecolor`;
+        expect(scopeOf.has(base), `${theme} names ${named[1]!}, which is not baked`).toBe(true);
+        const scope = scopeOf.get(base);
+        expect(
+          scope === undefined || scope === circuit,
+          `${theme} names ${named[1]!}, which belongs to ${scope} and is never downloaded here`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * Every baked file is reachable.
+   *
+   * This started as a floor of 88 with thirty colour variants sitting unused, which was honest but
+   * unsatisfying: an asset on disk that nothing can reach is weight without benefit. They all have
+   * homes now — the four process inks on the factory's drums, the printed cloth on the Megastore's
+   * displays, the tile on the columns and the carpet under the wheels — so the assertion is exact.
+   * It also catches the reverse regression: a renamed constant that quietly unhooks the pipeline.
    */
   it("reaches most of the baked set from application code", () => {
     const { referenced, unreferenced } = auditIntegration(manifest, source) as {
@@ -396,9 +464,11 @@ describe("asset integration", () => {
       unreferenced: string[];
     };
     expect(referenced.length + unreferenced.length).toBe(manifest.assets.length);
+    // All of them. Every baked file has a surface it dresses; nothing is baked and left on disk.
     expect(
-      referenced.length,
-      `only ${referenced.length}/${manifest.assets.length} reachable; unreferenced: ${unreferenced.join(", ")}`,
-    ).toBeGreaterThanOrEqual(88);
+      unreferenced,
+      `${unreferenced.length} baked files are unreachable from application code`,
+    ).toEqual([]);
+    expect(referenced.length).toBe(manifest.assets.length);
   });
 });

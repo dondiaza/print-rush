@@ -255,7 +255,38 @@ todas a la vez. El helper `cell()` desplaza la fase de cada una: medido después
 
 **Honestidad del manifiesto.** Escribía `status: "integrated"` en las 121 entradas mientras el juego
 dibujaba todo procedimentalmente. Ahora escribe `status: "baked"` y la accesibilidad se deriva
-aparte. Los 30 ficheros no referenciados se declaran como tales en `ART_DIRECTION.md` §11.
+aparte leyendo el fuente real.
+
+### ETAPA 3e — TODO APLICADO
+
+133 ficheros, **133 alcanzables desde código**. Lo que hizo falta:
+
+- **Tela estampada, horneada.** Cuatro diseños —rayo, onda, semitono y salpicadura— sobre el tejido
+  de punto: los expositores de camisetas del Megastore, las camisetas recién impresas del taller y
+  el puesto de merchandising del hall. El estampado no toca el borde del tile, así que la costura es
+  cloth contra cloth por construcción; y no aporta relieve, porque la tinta plastisol curada está a
+  ras y un gradiente duro en el borde del dibujo arruinaría el normal map.
+- **`materialClass` de los props deja de ser configuración muerta.** Los constructores usaban una
+  clase fija e ignoraban la del tema. Ahora distinguen masa principal de guarnición
+  (`ART_DIRECTION.md` §11).
+- **Presupuesto medido de verdad.** El manifiesto tenía un solo campo de alcance, así que sumaba las
+  siete liveries y los veintiún decals como "compartido": 5,64 MB que nadie descarga. Con tres
+  niveles (`always` / `track` / `kart`) el objetivo declarado se cumple y se verifica: 3,47 MB
+  compartidos (< 4), ≤ 1,90 MB por circuito (< 3), peor carrera 6,31 MB.
+- **Cinco valores por defecto apuntaban a otro circuito.** `BAKED_DEFAULT` nombraba
+  `mat_paintedmetal_press`, `mat_plastic_pallet`, `mat_wood_desk`, `mat_ink_violet` y
+  `mat_floortile_store` como defecto de su clase — assets de un circuito concreto, que en los demás
+  no se descargan nunca. Puestos a `null`, con la razón escrita, y un test impide que un tema nombre
+  un asset de otro circuito.
+- **La parrilla lleva sus liveries.** Antes sólo se precargaba la del jugador, así que los tres
+  rivales iban casi siempre en pintura plana. Cuatro wraps son menos de un megabyte.
+- **Carpet donde se conduce, baldosa en las columnas** (Megastore y Oficina), y tarima de madera en
+  las estructuras del hall manga: las tres superficies que quedaban sin fichero.
+
+**Tests** — 299 en `apps/web`, 386 en total. Nuevos: que el estampado existe de verdad (rango por
+canal 164–236 frente a 61 de la tela lisa), que ningún tema nombra un asset de otro circuito, que
+cada prop que un tema esparce resuelve a una fuente que existirá, y que el presupuesto declarado se
+cumple por niveles.
 
 **Tests** — 266 en `apps/web` (antes 249): costuras contra un control interior, alfa de borde,
 rango por canal, validez de los normal maps, correspondencia manifiesto↔disco en ambos sentidos,
@@ -276,7 +307,7 @@ zona cajas → salto sobre tienda → meta) y que reciba sus hero assets.
 - [ ] 3 hero assets (pared de camisetas, escalera central, caja registradora gigante)
 - [x] Capas de suelo con material horneado (`mat_floortile_store`, `mat_wood_store`) y decals de
       suelo proyectados (marcas, suciedad, pegatinas)
-- [ ] Decals de diseño sobre las camisetas de los expositores
+- [x] Diseños estampados sobre las camisetas de los expositores (4 motivos horneados)
 - [ ] IBL propio y ajuste de las 7 zonas de luz sobre el circuito final
 - [ ] Bucle de revisión visual: 10 capturas por vuelta, corregir, repetir
 

@@ -37,7 +37,16 @@ export type VisualAsset = {
   bytes: number;
   usage: string;
   status: string;
+  /**
+   * When the file is fetched. `always` is the shared material set; `track` is one circuit's own
+   * materials, its panorama and the decal families its theme scatters; `kart` is a livery, fetched
+   * only for the karts on the grid.
+   */
+  download: "always" | "track" | "kart";
 };
+
+/** What one race downloads, split by tier. Bytes. */
+export type RaceWeight = { always: number; track: number; kart: number; total: number };
 
 export type AssetManifest = {
   generatedAt: string;
@@ -161,11 +170,40 @@ export class AssetCatalog {
     );
   }
 
-  /** Total download weight of the shared set plus one circuit. What the budget check reports. */
-  bytesFor(circuit: string): number {
-    return this.manifest.assets
-      .filter((asset) => asset.circuit === undefined || asset.circuit === circuit)
-      .reduce((total, asset) => total + asset.bytes, 0);
+  /**
+   * What one race actually downloads.
+   *
+   * The figure the budget is about, and the reason the manifest carries a `download` tier at all.
+   * Summing by scope instead counted all seven liveries and all twenty-one decals into a "shared"
+   * bucket — 5.6 MB that no player has ever fetched, because a race pulls one circuit, the four or
+   * five decal families its theme scatters, and the liveries on its own grid.
+   *
+   * `families` comes from the caller rather than from a lookup here, because the decal families are
+   * the track dresser's business and importing it would be a cycle.
+   */
+  raceWeight(theme: string, liveries: readonly string[], families: readonly string[]): RaceWeight {
+    const circuit = circuitKeyForTheme(theme);
+    const wanted = new Set<string>();
+    for (const livery of liveries) {
+      const wrap = this.wrap(livery);
+      if (wrap) wanted.add(wrap.id);
+    }
+
+    let always = 0;
+    let track = 0;
+    let kart = 0;
+    for (const asset of this.manifest.assets) {
+      if (asset.download === "always") {
+        always += asset.bytes;
+      } else if (asset.download === "kart") {
+        if (wanted.has(asset.id)) kart += asset.bytes;
+      } else if (asset.category === "decal") {
+        if (families.some((family) => asset.id.startsWith(`decal_${family}_`))) track += asset.bytes;
+      } else if (asset.circuit === circuit) {
+        track += asset.bytes;
+      }
+    }
+    return { always, track, kart, total: always + track + kart };
   }
 
   /** A texture already preloaded, or null. Synchronous, so material creation stays synchronous. */

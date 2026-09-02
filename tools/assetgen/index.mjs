@@ -63,6 +63,15 @@ function write(relativePath, image, meta) {
     hasAlpha: image.channels === 4,
     bytes: png.length,
     usage: meta.usage,
+    /**
+     * When this file is fetched, which is what a download budget is actually about.
+     *
+     * The first manifest had only a `circuit` field, so anything without one counted as "shared" —
+     * and the budget then summed all seven kart liveries and all twenty-one decals into a figure no
+     * player ever downloads. A race fetches the shared materials, one circuit, that circuit's decal
+     * families, and the liveries on the grid. Three tiers describe that; one scope could not.
+     */
+    download: meta.download,
     // What this file is, not what anyone does with it. An earlier version wrote "integrated" here
     // for all 121 entries, which was a claim the bake is in no position to make and was false at the
     // time — the game was still drawing every surface procedurally. Whether an asset is reachable
@@ -82,29 +91,43 @@ function bakeMaterials() {
     const folder = join(scope.split("/").join("/"), "materials");
     const name = `mat_${variant.id}`;
 
-    const basecolor = renderRgb(MATERIAL_SIZE, (u, v) => built.color(u, v));
+    /**
+     * A variant may ask for less.
+     *
+     * Resolution follows on-screen size, which is a property of where a material is used and not of
+     * its class: a printed shirt on a shelf prop eight metres away does not need the texel density
+     * of a road surface passing under the kart. The printed fabrics take this and drop to a quarter
+     * of the bytes with nothing visible lost.
+     */
+    const size = variant.size ?? MATERIAL_SIZE;
+    const mapSize = Math.max(64, Math.round(size / 2));
+
+    const basecolor = renderRgb(size, (u, v) => built.color(u, v));
     write(join(folder, `${name}_basecolor.png`), basecolor, {
       id: `${name}_basecolor`,
       category: "material",
       circuit: variant.scope === "common" ? undefined : variant.scope,
       usage: `${built.class} basecolour, tiles every ${built.tile} m`,
+      download: variant.scope === "common" ? "always" : "track",
     });
 
     // Derived from the height function, not from the basecolour's luminance — a stain is not a bump.
-    const normal = renderNormalFromHeight(MATERIAL_MAP_SIZE, (u, v) => built.height(u, v), 1);
+    const normal = renderNormalFromHeight(mapSize, (u, v) => built.height(u, v), 1);
     write(join(folder, `${name}_normal.png`), normal, {
       id: `${name}_normal`,
       category: "material",
       circuit: variant.scope === "common" ? undefined : variant.scope,
       usage: `${built.class} tangent-space normal`,
+      download: variant.scope === "common" ? "always" : "track",
     });
 
-    const roughness = renderGrey(MATERIAL_MAP_SIZE, (u, v) => built.roughness(u, v));
+    const roughness = renderGrey(mapSize, (u, v) => built.roughness(u, v));
     write(join(folder, `${name}_roughness.png`), roughness, {
       id: `${name}_roughness`,
       category: "material",
       circuit: variant.scope === "common" ? undefined : variant.scope,
       usage: `${built.class} roughness`,
+      download: variant.scope === "common" ? "always" : "track",
     });
 
     count += 1;
@@ -129,6 +152,8 @@ function bakeDecals() {
         id: name,
         category: "decal",
         usage: `${family} wear decal, alpha-blended onto surfaces`,
+        // A theme scatters four or five families, never all seven, so decals are per-track.
+        download: "track",
       });
       count += 1;
     }
@@ -150,6 +175,8 @@ function bakeWraps() {
       id,
       category: "kart-wrap",
       usage: `kart livery "${name}", mapped to the hull UV (U around, V nose to tail)`,
+      // Only the liveries actually on the grid are fetched.
+      download: "kart",
     });
     count += 1;
   }
@@ -172,6 +199,7 @@ function bakeBackdrops() {
       category: "backdrop",
       circuit,
       usage: `cylindrical panorama for ${circuit}, 360 degrees, wraps horizontally`,
+      download: "track",
     });
     count += 1;
   }

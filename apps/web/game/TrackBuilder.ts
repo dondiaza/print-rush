@@ -10,7 +10,7 @@ import {
 } from "@babylonjs/core";
 import type { BakedTrack, TrackNode } from "@print-rush/game-core";
 import { MaterialLibrary, type MaterialClass, type MaterialQuality } from "@/render/MaterialLibrary";
-import { createPropSources, type PropKind, type PropSpec } from "@/render/PropLibrary";
+import { createPropSources, propSourceKey, type PropSpec } from "@/render/PropLibrary";
 import { buildHero, heroesForTheme } from "@/render/HeroAssets";
 import { beveledBox, ellipsoid, lofted, revolve, tube } from "@/render/Geometry";
 import { LightingRig, zonesForTheme, type QualityLevel } from "@/render/LightingRig";
@@ -58,25 +58,33 @@ export type ThemeVisuals = {
   props: readonly PropSpec[];
   structureColor: string;
   structureClass: MaterialClass;
+  /** Baked material for the big structures — pillars, gantries, the stage deck. */
+  structureTexture?: string;
 };
 
 const THEME_VISUALS: Record<string, ThemeVisuals> = {
   FLAGSHIP: {
-    road: { materialClass: "FLOOR_TILE", color: "#6e6259", texture: "mat_floortile_store" },
+    // Carpet on the aisle, tile on the columns. Both are how a real shop is built, and it puts the
+    // soft surface where the kart drives and the hard one where it reflects the lighting rig.
+    road: { materialClass: "FLOOR_TILE", color: "#6e6259", texture: "mat_carpet_store" },
     wall: { materialClass: "WOOD", color: "#c98a52", texture: "mat_wood_store" },
     kerbLight: "#f7f2e8",
     kerbDark: "#ff3da6",
     accentA: "#ff3da6",
     accentB: "#b9ff45",
     structureColor: "#e8dfd0",
-    structureClass: "CONCRETE",
+    structureClass: "FLOOR_TILE",
+    structureTexture: "mat_floortile_store",
     props: [
-      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 3 },
-      { materialClass: "FABRIC", color: "#65d8ff", kind: "SHELF", weight: 3 },
-      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2 },
+      // The shirts are the shop. Two plain colourways and two printed designs, so a wall of
+      // displays is four different things rather than one repeated.
+      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 2, texture: "mat_fabric_magenta" },
+      { materialClass: "FABRIC", color: "#65d8ff", kind: "SHELF", weight: 2, texture: "mat_fabric_cyan" },
+      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_bolt" },
+      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_wave" },
       { materialClass: "WOOD", color: "#c98a52", kind: "RAIL", weight: 3 },
-      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 2 },
-      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 1 },
+      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 2, texture: "mat_cardboard_default" },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 1, texture: "mat_screen_cyan" },
       { materialClass: "PLASTIC", color: "#4c7a4e", kind: "PLANT", weight: 1 },
     ],
   },
@@ -89,13 +97,14 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     accentB: "#3e6e9e",
     structureColor: "#5a6068",
     structureClass: "PAINTED_METAL",
+    structureTexture: "mat_paintedmetal_racking",
     props: [
-      { materialClass: "PAINTED_METAL", color: "#5a6068", kind: "SHELF", weight: 4 },
-      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 5 },
-      { materialClass: "PLASTIC", color: "#3e6e9e", kind: "PALLET", weight: 3 },
+      { materialClass: "PAINTED_METAL", color: "#5a6068", kind: "SHELF", weight: 4, texture: "mat_paintedmetal_racking" },
+      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 5, texture: "mat_cardboard_default" },
+      { materialClass: "PLASTIC", color: "#3e6e9e", kind: "PALLET", weight: 3, texture: "mat_plastic_pallet" },
       { materialClass: "PAINTED_METAL", color: "#ffc02e", kind: "MACHINE", weight: 2 },
-      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 2 },
-      { materialClass: "PAPER", color: "#f7f2e8", kind: "SIGN", weight: 1 },
+      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 2, texture: "mat_rawmetal_default" },
+      { materialClass: "PAPER", color: "#f7f2e8", kind: "SIGN", weight: 1, texture: "mat_paper_default" },
     ],
   },
   PRINT_FACTORY: {
@@ -107,31 +116,38 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     accentB: "#ff6b2c",
     structureColor: "#3a3f49",
     structureClass: "PAINTED_METAL",
+    structureTexture: "mat_paintedmetal_press",
     props: [
-      { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 5 },
-      { materialClass: "INK", color: "#8f5cff", kind: "BOX", weight: 3 },
-      { materialClass: "INK", color: "#ff3da6", kind: "BOX", weight: 2 },
-      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 3 },
-      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 2 },
-      { materialClass: "FABRIC", color: "#ffd43b", kind: "SHELF", weight: 2 },
+      { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 5, texture: "mat_paintedmetal_press" },
+      // The four process inks, which is what a screen-printing floor is actually stacked with.
+      { materialClass: "INK", color: "#8f5cff", kind: "BOX", weight: 2, texture: "mat_ink_violet" },
+      { materialClass: "INK", color: "#ff3da6", kind: "BOX", weight: 2, texture: "mat_ink_magenta" },
+      { materialClass: "INK", color: "#65d8ff", kind: "BOX", weight: 2, texture: "mat_ink_cyan" },
+      { materialClass: "INK", color: "#ffd43b", kind: "BOX", weight: 2, texture: "mat_ink_yellow" },
+      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 3, texture: "mat_rawmetal_default" },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 2, texture: "mat_screen_cyan" },
+      // Shirts fresh off the press, still on the rack.
+      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_splat" },
     ],
   },
   OFFICE: {
-    road: { materialClass: "FLOOR_TILE", color: "#8c8378", texture: "mat_floortile_office" },
+    // Carpet where the kart drives; the tile goes on the structures, as in the Megastore.
+    road: { materialClass: "FLOOR_TILE", color: "#8c8378", texture: "mat_carpet_office" },
     wall: { materialClass: "WOOD", color: "#a2764b", texture: "mat_wood_desk" },
     kerbLight: "#f7f2e8",
     kerbDark: "#65d8ff",
     accentA: "#65d8ff",
     accentB: "#b9ff45",
     structureColor: "#e6e1d8",
-    structureClass: "CONCRETE",
+    structureClass: "FLOOR_TILE",
+    structureTexture: "mat_floortile_office",
     props: [
-      { materialClass: "WOOD", color: "#a2764b", kind: "MACHINE", weight: 4 },
-      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 3 },
+      { materialClass: "WOOD", color: "#a2764b", kind: "MACHINE", weight: 4, texture: "mat_wood_desk" },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 3, texture: "mat_screen_cyan" },
       { materialClass: "PLASTIC", color: "#4c7a4e", kind: "PLANT", weight: 3 },
-      { materialClass: "PAPER", color: "#f7f2e8", kind: "BOX", weight: 3 },
+      { materialClass: "PAPER", color: "#f7f2e8", kind: "BOX", weight: 3, texture: "mat_paper_default" },
       { materialClass: "PLASTIC", color: "#2b2732", kind: "MACHINE", weight: 2 },
-      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 1 },
+      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 1, texture: "mat_fabric_magenta" },
     ],
   },
   MANGA: {
@@ -145,13 +161,18 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     accentA: "#ff3da6",
     accentB: "#65d8ff",
     structureColor: "#1b1630",
-    structureClass: "CONCRETE",
+    // The stands are built on timber decking, which is what a convention hall actually is under the
+    // carpet, and it gives the one warm surface in an otherwise cold neon space.
+    structureClass: "WOOD",
+    structureTexture: "mat_wood_stage",
     props: [
       { materialClass: "NEON", color: "#ff3da6", kind: "SIGN", weight: 4 },
       { materialClass: "NEON", color: "#65d8ff", kind: "SIGN", weight: 3 },
-      { materialClass: "SCREEN", color: "#8f5cff", kind: "SCREEN", weight: 3 },
+      { materialClass: "SCREEN", color: "#8f5cff", kind: "SCREEN", weight: 3, texture: "mat_screen_magenta" },
       { materialClass: "FABRIC", color: "#8f5cff", kind: "CROWD", weight: 4 },
       { materialClass: "FABRIC", color: "#ff3da6", kind: "CROWD", weight: 3 },
+      // A merch stand: halftone print on black, which is what a stand sells.
+      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_grid" },
       { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 2 },
     ],
   },
@@ -330,7 +351,8 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       for (const side of [1, -1] as const) {
         if (random() > 0.86) continue;
         const spec = propWeights[Math.floor(random() * propWeights.length)]!;
-        const source = propSources.get(spec.kind);
+        // Keyed by kind *and* print: two shirt displays with different designs are two sources.
+        const source = propSources.get(propSourceKey(spec.kind, spec.texture));
         if (!source) continue;
         const distance = half + 2.6 + random() * 5;
         const instance = source.mesh.createInstance(`prop-${index}-${side}`);
@@ -344,8 +366,17 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
         // failure mode the art bible calls out.
         const scale = 0.82 + random() * 0.5;
         instance.scaling.setAll(scale);
-        const tint = Color3.FromHexString(spec.color);
+        /**
+         * Per-instance variation, but not at the cost of the artwork.
+         *
+         * An untextured prop takes the theme's colour times a random shade, which is what lets one
+         * mesh serve six colours. A textured one takes a neutral shade only: multiplying a printed
+         * design by a hue would tint the print, and a magenta bolt on a cyan shirt is not what the
+         * file says. Both still vary in brightness, which is what stops two neighbours looking
+         * stamped from the same die.
+         */
         const shade = 0.86 + random() * 0.3;
+        const tint = source.textured ? Color3.White() : Color3.FromHexString(spec.color);
         instance.instancedBuffers.color = new Color4(tint.r * shade, tint.g * shade, tint.b * shade, 1);
         propCount += 1;
         if (spec.kind === "SCREEN" || spec.kind === "SIGN") {
@@ -633,7 +664,12 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       start.y,
       start.z + startFrame.nz * (start.width * 0.5 + 1.8) * side,
     );
-    pillar.material = materials.get({ materialClass: visuals.structureClass, color: visuals.structureColor, tile: 2 });
+    pillar.material = materials.get({
+      materialClass: visuals.structureClass,
+      color: visuals.structureColor,
+      tile: 2,
+      ...(visuals.structureTexture ? { texture: visuals.structureTexture } : {}),
+    });
     lighting.addShadowCaster(pillar);
   }
 
@@ -714,12 +750,11 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   };
 }
 
-function buildWeightTable(props: ThemeVisuals["props"]): Array<{ materialClass: MaterialClass; color: string; kind: PropKind }> {
-  const table: Array<{ materialClass: MaterialClass; color: string; kind: PropKind }> = [];
+/** The scatter draws from this: one entry per unit of weight, so weights are real probabilities. */
+function buildWeightTable(props: ThemeVisuals["props"]): PropSpec[] {
+  const table: PropSpec[] = [];
   for (const prop of props) {
-    for (let repeat = 0; repeat < prop.weight; repeat += 1) {
-      table.push({ materialClass: prop.materialClass, color: prop.color, kind: prop.kind });
-    }
+    for (let repeat = 0; repeat < prop.weight; repeat += 1) table.push(prop);
   }
   return table;
 }

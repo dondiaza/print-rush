@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { AssetCatalog, circuitKeyForTheme, type AssetManifest } from "@/render/AssetCatalog";
 import { MaterialLibrary } from "@/render/MaterialLibrary";
 import { buildKart } from "@/render/KartBuilder";
+import { propSourceKey, propSourceSpecs } from "@/render/PropLibrary";
+import { visualsForTheme } from "@/game/TrackBuilder";
 
 /**
  * The catalog and the fallback path.
@@ -63,23 +65,63 @@ describe("asset catalog resolution", () => {
   });
 
   /**
-   * The per-circuit download weight, which is the number the budget is actually about.
+   * The declared download budget, verified against what a race actually fetches.
    *
-   * A player downloads the shared set plus one circuit, never all five, so summing the whole
-   * manifest would report a figure nobody ever pays.
+   * `docs/ART_DIRECTION.md` §3 sets COMMON under 4 MB and TRACK under 3 MB. The first version of
+   * this suite asserted 6 MB for the shared set, which is not the budget — it was the figure that
+   * happened to pass, because the manifest counted all seven liveries and all twenty-one decals as
+   * shared. A race pulls one circuit, that theme's decal families, and its own grid's liveries.
    */
-  it("counts a circuit's weight as the shared set plus its own", () => {
-    const store = catalog.bytesFor("store");
-    const total = manifest.assets.reduce((sum, asset) => sum + asset.bytes, 0);
-    expect(store).toBeLessThan(total);
-    expect(store).toBeLessThan(7 * 1024 * 1024);
-    // Every circuit pays for the shared set, so no circuit can be cheaper than it.
-    const shared = manifest.assets
-      .filter((asset) => asset.circuit === undefined)
+  const FAMILIES: Record<string, string[]> = {
+    FLAGSHIP: ["floor_mark", "dirt", "sticker", "scratch"],
+    WAREHOUSE: ["dirt", "floor_mark", "tape", "label", "scratch"],
+    PRINT_FACTORY: ["ink_splash", "floor_mark", "dirt", "scratch"],
+    OFFICE: ["floor_mark", "label", "tape", "dirt"],
+    MANGA: ["sticker", "floor_mark", "dirt", "ink_splash"],
+  };
+
+  /** Four karts on the grid, and the four heaviest liveries, which is the worst case. */
+  const heaviestLiveries = manifest.assets
+    .filter((asset) => asset.download === "kart")
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 4)
+    .map((asset) => asset.id.replace(/^kart_wrap_/, "").replace(/_basecolor$/, "").toUpperCase());
+
+  it("keeps the shared set inside the 4 MB budget", () => {
+    const always = manifest.assets
+      .filter((asset) => asset.download === "always")
       .reduce((sum, asset) => sum + asset.bytes, 0);
-    for (const circuit of ["store", "warehouse", "screenprinting", "office", "manga", "greybox"]) {
-      expect(catalog.bytesFor(circuit), `${circuit} weight`).toBeGreaterThanOrEqual(shared);
+    expect(always / 1048576).toBeLessThan(4);
+  });
+
+  it("keeps every circuit inside the 3 MB budget, and the whole race under 7", () => {
+    for (const [theme, families] of Object.entries(FAMILIES)) {
+      const weight = catalog.raceWeight(theme, heaviestLiveries, families);
+      expect(weight.track / 1048576, `${theme} track`).toBeLessThan(3);
+      expect(weight.total / 1048576, `${theme} race total`).toBeLessThan(7);
+      // The tiers must account for everything, or the figure is not the download.
+      expect(weight.always + weight.track + weight.kart).toBe(weight.total);
     }
+  });
+
+  it("charges a race only for the liveries on its own grid", () => {
+    const one = catalog.raceWeight("FLAGSHIP", ["COMIC"], FAMILIES.FLAGSHIP!);
+    const four = catalog.raceWeight("FLAGSHIP", heaviestLiveries, FAMILIES.FLAGSHIP!);
+    const all = manifest.assets
+      .filter((asset) => asset.download === "kart")
+      .reduce((sum, asset) => sum + asset.bytes, 0);
+    expect(one.kart).toBeGreaterThan(0);
+    expect(one.kart).toBeLessThan(four.kart);
+    // Never all seven, which is what the old scope sum charged.
+    expect(four.kart).toBeLessThan(all);
+    expect(catalog.raceWeight("FLAGSHIP", ["NONE"], FAMILIES.FLAGSHIP!).kart).toBe(0);
+  });
+
+  it("charges a race only for the decal families its theme scatters", () => {
+    // The office scatters no ink, so it must not pay for the splashes — the heaviest family there is.
+    const office = catalog.raceWeight("OFFICE", ["NONE"], FAMILIES.OFFICE!);
+    const factory = catalog.raceWeight("PRINT_FACTORY", ["NONE"], FAMILIES.PRINT_FACTORY!);
+    expect(office.track).toBeLessThan(factory.track);
   });
 
   it("reports no texture as resident until one is preloaded", () => {
@@ -160,5 +202,49 @@ describe("kart livery", () => {
   it("gives the presets that dress the grid more than one livery between them", () => {
     const liveries = new Set(KartPresets.map((preset) => preset.livery ?? "NONE"));
     expect(liveries.size, `grid liveries: ${[...liveries].join(", ")}`).toBeGreaterThan(1);
+  });
+});
+
+describe("prop sources", () => {
+  const THEMES = ["FLAGSHIP", "WAREHOUSE", "PRINT_FACTORY", "OFFICE", "MANGA"] as const;
+
+  /**
+   * The regression this exists for.
+   *
+   * The scatter looks a prop up by key every time it places one. When the key gained a print
+   * component, every existing lookup still compiled and started returning `undefined` — so a
+   * circuit would have been dressed with nothing at all, silently. Asserting that every spec
+   * resolves is the cheapest possible guard against the whole class of mistake.
+   */
+  it.each(THEMES)("%s resolves every prop it scatters to a source", (theme) => {
+    const visuals = visualsForTheme(theme);
+    const keys = new Set(propSourceSpecs(visuals.props).map(([key]) => key));
+    for (const spec of visuals.props) {
+      expect(keys.has(propSourceKey(spec.kind, spec.texture)), `${theme} ${spec.kind} ${spec.texture ?? "plain"}`).toBe(true);
+    }
+  });
+
+  it("shares a source between specs that differ only by colour", () => {
+    const shared = propSourceSpecs([
+      { materialClass: "CARDBOARD", color: "#aaaaaa", kind: "BOX", weight: 1 },
+      { materialClass: "CARDBOARD", color: "#bbbbbb", kind: "BOX", weight: 1 },
+    ]);
+    expect(shared).toHaveLength(1);
+  });
+
+  it("splits sources between specs that differ by print", () => {
+    // Two prints cannot share a mesh: the artwork is in the texture, not in the instance colour.
+    const split = propSourceSpecs([
+      { materialClass: "FABRIC", color: "#ffffff", kind: "SHELF", weight: 1, texture: "mat_fabricprint_bolt" },
+      { materialClass: "FABRIC", color: "#ffffff", kind: "SHELF", weight: 1, texture: "mat_fabricprint_wave" },
+      { materialClass: "FABRIC", color: "#ffffff", kind: "SHELF", weight: 1 },
+    ]);
+    expect(split).toHaveLength(3);
+  });
+
+  it("gives the Megastore four different shirt displays", () => {
+    const displays = visualsForTheme("FLAGSHIP").props.filter((spec) => spec.kind === "SHELF");
+    const prints = new Set(displays.map((spec) => spec.texture));
+    expect(prints.size, `${[...prints].join(", ")}`).toBe(4);
   });
 });

@@ -36,7 +36,10 @@ export const DECALS = {
   /** Ink splash. Four variants; the main blob plus satellite droplets, which is what sells it. */
   ink_splash: {
     count: 4,
-    size: 512,
+    // 384, not 512. A splash is 2.4 to 4.6 m across with no hard edge in it, so the extra
+    // resolution bought nothing measurable and cost 606 KB across four variants — more than
+    // every other decal family put together.
+    size: 384,
     build: ({ seed, color }) => {
       const random = makeRandom(seed);
       const lobes = 5 + Math.floor(random() * 4);
@@ -115,7 +118,8 @@ export const DECALS = {
   /** Ground dirt. Broad, soft, low alpha — the thing that stops a floor reading as new. */
   dirt: {
     count: 3,
-    size: 512,
+    // Softer still than the splashes, and broader. Same reasoning.
+    size: 384,
     build: ({ seed }) => (u, v) => {
       const patch = fbm(u, v, { octaves: 5, frequency: 5, seed });
       const radial = falloff(Math.hypot(u - 0.5, v - 0.5), 0.48, 1.1);

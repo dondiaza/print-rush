@@ -359,19 +359,27 @@ export type MaterialRequest = {
 const BAKED_DEFAULT: Record<MaterialClass, string | null> = {
   FABRIC: "mat_fabric_white",
   CARDBOARD: "mat_cardboard_default",
-  PAINTED_METAL: "mat_paintedmetal_press",
   RAW_METAL: "mat_rawmetal_default",
   RUBBER: "mat_rubber_default",
-  PLASTIC: "mat_plastic_pallet",
-  GLASS: null,
-  WOOD: "mat_wood_desk",
   CONCRETE: "mat_concrete_default",
-  INK: "mat_ink_violet",
   PAPER: "mat_paper_default",
+  ASPHALT: "mat_asphalt_default",
+  // Every entry above is in the shared set. These five are not, and that is why they are null:
+  // the only baked variants of these classes belong to one circuit each — the press metal to the
+  // factory, the pallet plastic to the warehouse, the desk oak to the office — and another
+  // circuit's assets are never downloaded. Naming one here would point the default at a file that
+  // cannot be resident, which is indistinguishable from a typo and just as useless. Surfaces of
+  // these classes take their relief from the texture their own theme names, and the procedural
+  // generator where it names none.
+  PAINTED_METAL: null,
+  PLASTIC: null,
+  WOOD: null,
+  INK: null,
+  FLOOR_TILE: null,
+  // Smooth and emissive respectively: a surface map would only add cost.
+  GLASS: null,
   SCREEN: null,
   NEON: null,
-  ASPHALT: "mat_asphalt_default",
-  FLOOR_TILE: "mat_floortile_store",
 };
 
 /**

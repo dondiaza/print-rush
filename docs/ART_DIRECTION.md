@@ -129,9 +129,23 @@ No se genera todo a 4K. La resolución la decide el tamaño en pantalla, no la i
 **Presupuesto de descarga:** los assets se cargan **por circuito**, nunca los cinco a la vez.
 
 ```
-COMMON  (materiales compartidos, decals, wraps, iconos)   objetivo < 4 MB
-TRACK   (fondo del circuito + materiales propios)          objetivo < 3 MB
+ALWAYS  (materiales compartidos)                          objetivo < 4 MB   real 3,47 MB
+TRACK   (materiales propios + panorama + decals del tema) objetivo < 3 MB   real ≤ 1,90 MB
+KART    (las liveries que hay en la parrilla)             —                 ≤ 0,95 MB
 ```
+
+**Tres niveles, no dos.** La primera versión de esta tabla metía decals y wraps en `COMMON`, y el
+manifiesto sólo tenía un campo `circuit`: todo lo que no pertenecía a un circuito contaba como
+compartido. Eso daba 5,64 MB de "compartido" que **ningún jugador ha descargado nunca**, porque una
+carrera se lleva un circuito, las cuatro o cinco familias de decals que ese tema esparce, y las
+liveries de su propia parrilla — no las siete. El manifiesto lleva ahora un campo `download` con el
+nivel, y `AssetCatalog.raceWeight()` calcula lo que de verdad se pide. Peor carrera medida:
+**6,31 MB** en el taller de serigrafía, con cuatro liveries distintas.
+
+Una regla que se comprueba en los tests: **un tema sólo puede nombrar assets del conjunto
+compartido o de su propio circuito.** `mat_paintedmetal_press` es un fichero real, y nombrarlo desde
+el tema Manga compilaría, pasaría la comprobación de "ningún id inventado", y caería al generador
+procedural para siempre sin que nada lo dijera.
 
 El preloader muestra progreso **real** — bytes descargados sobre bytes esperados, tomados del
 manifiesto. Nunca una barra ficticia.
@@ -270,6 +284,8 @@ y el llamante cae al generador procedural.**
 |---|---|---|---|
 | Calzada y muros de circuito | del fichero nombrado por el tema | del fichero | del fichero |
 | Props, kerbs, estructuras | color del tema (procedural, teñido) | del fichero de su clase | del fichero |
+| Props (masa principal) | del fichero nombrado por el tema | del fichero | del fichero |
+| Props (guarnición) | color del tema | de su clase | de su clase |
 | Kart | livery si hay; si no, `primaryColor` | — | — |
 | Fondo | panorama cilíndrico | — | — |
 | Decals | RGBA proyectado sobre la calzada | — | — |
@@ -301,13 +317,21 @@ todas las superficies con el generador procedural. Era falso. Ahora escribe `sta
 lo único que el horno puede afirmar, y la accesibilidad desde el código se deriva aparte en
 `tools/assetgen/audit.mjs` leyendo el fuente real.
 
-Alcance medido: **91 de 121 ficheros** referenciados desde código de aplicación.
+Alcance medido: **133 de 133 ficheros** referenciados desde código de aplicación. Nada se hornea
+para quedarse en disco.
 
-Los 30 restantes son diez variantes de color —`mat_ink_cyan`, `mat_ink_magenta`, `mat_ink_yellow`,
-`mat_fabric_cyan`, `mat_fabric_magenta`, `mat_screen_cyan`, `mat_screen_magenta`, `mat_carpet_store`,
-`mat_carpet_office`, `mat_wood_stage`— con sus tres mapas cada una. Están horneadas y son válidas;
-no están enlazadas porque los props toman su color del tema y una sola variante por clase aporta ya
-el normal y el roughness. No es un defecto, y no se declara como integrado.
+Llegar al 100 % exigió dos cosas que valían la pena por sí mismas:
+
+- **`materialClass` en un `PropSpec` era configuración muerta.** Los constructores de props
+  ignoraban la clase que el tema declaraba y usaban una fija. Ahora cada prop distingue su *masa
+  principal* —lo que el tema realmente está especificando cuando escribe
+  `{ materialClass: "INK", kind: "BOX" }`: eso es un bidón de tinta— de su *guarnición*, cuyo
+  material lo decide lo que la pieza es físicamente. Las camisetas colgadas de un percherío son
+  tela sea el percherío de lo que sea; tomar la clase del tema ahí colgaría camisetas de madera.
+- **Una fuente de malla por tipo *y estampado*.** El color por instancia permite que una malla
+  sirva a seis colores, que es lo que salva el presupuesto de materiales. Un estampado horneado no
+  se puede compartir así: el dibujo está en la textura. Dos props que difieren en estampado son dos
+  fuentes; los que difieren sólo en color siguen compartiendo una.
 
 ---
 
