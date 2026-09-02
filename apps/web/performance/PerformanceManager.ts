@@ -31,6 +31,15 @@ export function setQualityOverride(profile: RuntimeQuality | "AUTO"): void {
   if (profile === "AUTO") localStorage.removeItem(STORAGE_KEY); else localStorage.setItem(STORAGE_KEY, profile);
 }
 
+/**
+ * Maps the device profile onto the render quality tier used by the lighting rig, material library
+ * and VFX budgets. Kept as one function so the four systems can never disagree about what "MEDIUM"
+ * means — V4 decided quality independently in three places, twice from `window.innerWidth`.
+ */
+export function qualityForProfile(profile: RuntimeQuality): "LOW" | "MEDIUM" | "HIGH" | "ULTRA" {
+  return profile;
+}
+
 export function getHardwareScalingLevel(profile: RuntimeQuality): number {
   const scale = QualityProfiles[profile].renderScale;
   return Math.max(1, Math.min(2.25, devicePixelRatio / Math.max(.55, scale * 1.35)));

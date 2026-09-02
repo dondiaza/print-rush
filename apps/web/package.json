@@ -7,11 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@babylonjs/core": "^9.23.0",
-    "@dimforge/rapier3d": "^0.20.0",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@print-rush/3d-factory": "0.2.0",
     "@print-rush/game-core": "0.1.0",
@@ -25,6 +25,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.3.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }

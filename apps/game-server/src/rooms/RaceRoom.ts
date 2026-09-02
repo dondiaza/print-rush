@@ -5,13 +5,19 @@ import {
   NetworkConfig,
   RacePhase,
   advanceRaceProgress,
-  createFlagshipStoreTrack,
+  getThemedTrack,
   createKartState,
   createRaceProgress,
   isAllowedLaps,
   rankPlayers,
   sanitizeInput,
+  VehicleConfig,
+  queryWall,
+  resolveGround,
+  resolveWall,
+  sampleTrack,
   simulateKart,
+  surfaceGrip,
   type GameInput,
   type KartState,
   type RaceProgress,
@@ -29,6 +35,8 @@ type InternalPlayer = {
   kart: KartState;
   progress: RaceProgress;
   limiter: InputRateLimiter;
+  /** Last track node this player was on. Keeps sampling local and resolves overlapping sections. */
+  cursor: number;
 };
 
 const idleInput = (): GameInput => ({
@@ -43,7 +51,8 @@ const idleInput = (): GameInput => ({
 
 export class RaceRoom extends Room<{ state: RaceStateSchema }> {
   maxClients: number = GameplayConfig.maxPlayers;
-  private readonly track = createFlagshipStoreTrack();
+  // The server bakes the same blueprint as the client, so both simulate identical geometry.
+  private readonly track = getThemedTrack("tshirt-megastore").definition;
   private readonly internal = new Map<string, InternalPlayer>();
   private countdownTimer: number = GameplayConfig.countdownSeconds;
 
@@ -91,7 +100,8 @@ export class RaceRoom extends Room<{ state: RaceStateSchema }> {
     this.state.players.set(client.sessionId, player);
     this.internal.set(client.sessionId, {
       input: idleInput(),
-      kart: createKartState(spawn.position.x, spawn.position.z, spawn.rotation),
+      kart: createKartState(spawn.position.x, spawn.position.z, spawn.rotation, spawn.position.y),
+      cursor: -1,
       progress: createRaceProgress(Date.now()),
       limiter: new InputRateLimiter(NetworkConfig.maxInputsPerSecond),
     });
@@ -145,14 +155,31 @@ export class RaceRoom extends Room<{ state: RaceStateSchema }> {
       const schema = this.state.players.get(id);
       if (!schema) return;
       const input = schema.connected ? internal.input : { ...idleInput(), throttle: 0.55 };
-      internal.kart = simulateKart(internal.kart, input, dt);
-      internal.progress = advanceRaceProgress(internal.progress, internal.kart.position, this.track, this.state.lapsRequired, now);
+      const sample = sampleTrack(this.track, internal.kart.position, internal.cursor);
+      internal.cursor = sample.index;
+      internal.kart = simulateKart(internal.kart, input, dt, surfaceGrip(sample.offRoad ? "OFFROAD" : sample.surface));
+
+      // The server resolves the same ground and wall contacts the client does, from the same
+      // geometry, so an authoritative correction never disagrees about where the track is.
+      resolveGround(internal.kart, sample.groundY + 0.42, dt);
+      const wall = queryWall(sample, VehicleConfig.collisionRadius);
+      if (wall) resolveWall(internal.kart, wall.normal, wall.penetration);
+
+      internal.progress = advanceRaceProgress(internal.progress, internal.kart.position, this.track, this.state.lapsRequired, now, internal.cursor);
       schema.kart.x = internal.kart.position.x;
       schema.kart.y = internal.kart.position.y;
       schema.kart.z = internal.kart.position.z;
       schema.kart.rotation = internal.kart.rotation;
+      schema.kart.vx = internal.kart.velocity.x;
+      schema.kart.vz = internal.kart.velocity.z;
       schema.kart.speed = internal.kart.speed;
+      schema.kart.verticalSpeed = internal.kart.verticalSpeed;
       schema.kart.boostRemaining = internal.kart.boostRemaining;
+      schema.kart.boostTier = internal.kart.boostTier;
+      schema.kart.drifting = internal.kart.driftActive;
+      schema.kart.driftDirection = internal.kart.driftDirection;
+      schema.kart.driftLevel = internal.kart.driftLevel;
+      schema.kart.grounded = internal.kart.grounded;
       schema.lap = internal.progress.lap;
       schema.checkpoint = internal.progress.checkpoint;
       schema.lastProcessedInput = internal.input.sequence;

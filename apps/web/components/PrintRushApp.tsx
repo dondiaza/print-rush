@@ -158,11 +158,12 @@ export function PrintRushApp() {
             <span className="result-eyebrow">TRACK INTRO · 5 SECTORES</span>
             <h2 id="briefing-title">{activeTrack.config.name.toUpperCase()}</h2>
             <div className="briefing-metrics">
-              <div><b>{activeTrack.metrics.lengthMeters}M</b><span>LONGITUD</span></div>
-              <div><b>{activeTrack.metrics.estimatedLapSeconds}S</b><span>VUELTA EST.</span></div>
+              <div><b>{activeTrack.baked.analysis.lengthMeters.toLocaleString("es-ES")}M</b><span>LONGITUD</span></div>
+              <div><b>{activeTrack.baked.analysis.estimatedLapSeconds}S</b><span>VUELTA EST.</span></div>
+              <div><b>{activeTrack.baked.analysis.corners}</b><span>CURVAS</span></div>
               <div><b>{activeTrack.config.theme.replace("_", " ")}</b><span>ENTORNO</span></div>
             </div>
-            <ol className="sector-list">{activeTrack.landmarks.map((landmark, index) => <li key={landmark.id}><b>0{index + 1}</b><span>{landmark.label}</span><i style={{ background: landmark.color }} /></li>)}</ol>
+            <ol className="sector-list">{activeTrack.baked.blueprint.sectors.map((sector) => <li key={sector.index}><b>0{sector.index}</b><span>{sector.name}</span><i data-role={sector.role} /></li>)}</ol>
           </div>
           <div className="controls-card">
             <span>CONTROLES / PC + MOBILE</span>

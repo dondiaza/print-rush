@@ -5,6 +5,7 @@ import type { AllowedLaps } from "@print-rush/game-core";
 import { GameRuntime, type HudState, type RaceResult } from "@/game/GameRuntime";
 import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
 import { loadActiveTrack } from "@/factory/TrackFactory";
+import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
 
 type Props = {
   laps: AllowedLaps;
@@ -38,6 +39,19 @@ const INITIAL_HUD: HudState = {
   incoming: false,
   surface: "ASPHALT",
   lastLap: false,
+  slipAngleDeg: 0,
+  drifting: false,
+  boostTier: 0,
+  lapDistance: 0,
+  lapLength: 0,
+  fps: 60,
+  boostReserve: 0,
+  driftChain: 0,
+  driftGrade: "NONE",
+  driftWindowOpen: false,
+  driftCue: null,
+  perfectDrifts: 0,
+  maxSpeedKph: 0,
 };
 
 export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Props) {
@@ -49,12 +63,19 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
   const [error, setError] = useState<string | null>(null);
   const [autoAccelerate, setAutoAccelerate] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const debug = useDebugEnabled();
+  // The debug panel reads the latest HUD without forcing a re-render of the race UI.
+  const hudRef = useRef<HudState | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let active = true;
-    void GameRuntime.create(canvas, { laps, muted, onHud: setHud, onFinish, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
+    const onHud = (state: HudState): void => {
+      hudRef.current = state;
+      setHud(state);
+    };
+    void GameRuntime.create(canvas, { laps, muted, onHud, onFinish, character: loadActiveCharacter(), kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() }).then((runtime) => {
       if (!active) { runtime.dispose(); return; }
       runtimeRef.current = runtime;
       runtime.start();
@@ -106,10 +127,35 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
 
   return (
     <main className="race-shell" aria-label={`Carrera de ${nickname}`}>
+      <style>{`
+        .drift-track { position: relative; overflow: hidden; }
+        .drift-track.window-open {
+          box-shadow: 0 0 0 2px #b9ff45, 0 0 14px rgba(185, 255, 69, 0.7);
+        }
+        .drift-reserve {
+          position: absolute; inset: 0 auto 0 0; background: rgba(101, 216, 255, 0.45);
+        }
+        .drift-cue {
+          position: absolute; left: 50%; top: 34%; transform: translateX(-50%);
+          font: 900 34px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.03em;
+          text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45); pointer-events: none;
+          animation: cue-pop 180ms ease-out;
+        }
+        .drift-cue.grade-perfect { color: #b9ff45; }
+        .drift-cue.grade-good { color: #65d8ff; }
+        .drift-cue.grade-miss { color: #ff7b7b; font-size: 26px; }
+        .drift-cue.grade-tap { color: #f7f2e8; font-size: 22px; opacity: 0.85; }
+        .drift-cue.grade-chain { color: #ff3da6; }
+        @keyframes cue-pop {
+          from { transform: translateX(-50%) scale(0.7); opacity: 0; }
+          to { transform: translateX(-50%) scale(1); opacity: 1; }
+        }
+      `}</style>
       <canvas ref={canvasRef} className="race-canvas" />
       <div className="noise" aria-hidden="true" />
 
       {loading && <div className="race-menu"><div className="race-menu-inner"><h2>CARGANDO TALLER…</h2><p>Preparando físicas, circuito y rivales.</p></div></div>}
+      {debug && <DebugOverlay hudRef={hudRef} />}
       {error && <div className="race-menu"><div className="race-menu-inner"><h2>SIN MOTOR</h2><p>{error}</p><button className="cta-primary" onClick={onExit}>VOLVER</button></div></div>}
 
       {!loading && !error && (
@@ -128,13 +174,25 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
               <span>{hud.rouletteName ? `PRINTING · ${hud.rouletteName}` : hud.hasItem ? `E · ${hud.itemName?.toUpperCase()}` : "SIN OBJETO"}</span>
             </div>
             <div className="drift-meter">
-              <div className="drift-label"><span>DRIFT CHARGE</span><b>LV {hud.driftLevel}</b></div>
-              <div className="drift-track"><div className="drift-fill" style={{ width: `${Math.min(100, hud.driftCharge / 1.7 * 100)}%` }} /></div>
+              <div className="drift-label">
+                <span>DRIFT{hud.driftChain > 1 ? ` · CHAIN x${hud.driftChain}` : ""}</span>
+                <b>LV {hud.driftLevel}</b>
+              </div>
+              <div className={`drift-track ${hud.driftWindowOpen ? "window-open" : ""}`}>
+                <div className="drift-fill" style={{ width: `${Math.min(100, (hud.driftCharge / 2.6) * 100)}%` }} />
+                {/* The banked reserve, drawn behind the charge so a chain is visible at a glance. */}
+                {hud.boostReserve > 0 && (
+                  <div className="drift-reserve" style={{ width: `${Math.min(100, (hud.boostReserve / 1.6) * 100)}%` }} />
+                )}
+              </div>
             </div>
             <div className="hud-speed"><strong>{hud.speedKph}</strong><span>KM/H</span></div>
           </div>
           {hud.countdown !== null && <div key={hud.countdown} className="countdown">{hud.countdown}</div>}
           {hud.banner && <div className="race-banner">{hud.banner}</div>}
+          {/* The grade is the feedback the chaining system lives or dies by, so it gets its own
+              slot rather than competing with the banner for the same line. */}
+          {hud.driftCue && <div className={`drift-cue grade-${hud.driftCue.split(" ")[0]!.toLowerCase()}`}>{hud.driftCue}</div>}
           {hud.incoming && <div className="incoming-warning"><b>!</b><span>INCOMING</span></div>}
           {hud.inked && <div className="ink-hit" aria-label="Tinta en pantalla"><i /><i /><i /></div>}
           {hud.shield && <div className="status-chip shield-chip">SHIELD x1</div>}

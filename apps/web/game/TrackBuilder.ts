@@ -1,315 +1,677 @@
 import {
   Color3,
-  DynamicTexture,
+  Color4,
   Mesh,
   MeshBuilder,
-  PBRMaterial,
   Scene,
-  StandardMaterial,
   TransformNode,
+  Vector2,
   Vector3,
 } from "@babylonjs/core";
-import type { TrackDefinition } from "@print-rush/game-core";
-import { TrackPresets, type StoredTrack, type TrackSurface } from "@/factory/TrackFactory";
-import { createEmissiveMaterial } from "./createKart";
+import type { BakedTrack, TrackNode } from "@print-rush/game-core";
+import { MaterialLibrary, type MaterialClass, type MaterialQuality } from "@/render/MaterialLibrary";
+import { createPropSources, type PropKind, type PropSpec } from "@/render/PropLibrary";
+import { buildHero, heroesForTheme } from "@/render/HeroAssets";
+import { beveledBox, ellipsoid, lofted, revolve, tube } from "@/render/Geometry";
+import { LightingRig, zonesForTheme, type QualityLevel } from "@/render/LightingRig";
+import { buildRoadSurface, buildWallSurface, curvatureAt, frameAt } from "@/render/RoadMesh";
 
-export type BuiltHazard = {
-  node: TransformNode;
-  position: Vector3;
-  progress: number;
+/**
+ * TRACK BUILDER V5.
+ *
+ * Replaces the V4 builder, which drew the road as a flat ribbon, the barriers as 120 instanced boxes
+ * every fourth node, and the entire environment as 42 randomly sized cubes arranged in an ellipse
+ * outside the track.
+ *
+ * What changed structurally:
+ *  - the road is real geometry with banking and distance-based UVs, and it has kerbs on the inside
+ *    of corners, lane markings and a painted racing line;
+ *  - walls are continuous surfaces that open where a shortcut or a ledge exists;
+ *  - trackside props are placed by lap distance rather than by angle, so no stretch of road is empty
+ *    and the objects that make speed legible are always present;
+ *  - everything repeated is instanced with per-instance colour, so a hundred boxes cost one material.
+ */
+
+export type ThemeVisuals = {
+  road: { materialClass: MaterialClass; color: string };
+  wall: { materialClass: MaterialClass; color: string };
+  kerbLight: string;
+  kerbDark: string;
+  accentA: string;
+  accentB: string;
+  /** Prop palette used by the seeded scatter. */
+  props: readonly PropSpec[];
+  structureColor: string;
+  structureClass: MaterialClass;
+};
+
+const THEME_VISUALS: Record<string, ThemeVisuals> = {
+  FLAGSHIP: {
+    road: { materialClass: "FLOOR_TILE", color: "#6e6259" },
+    wall: { materialClass: "WOOD", color: "#c98a52" },
+    kerbLight: "#f7f2e8",
+    kerbDark: "#ff3da6",
+    accentA: "#ff3da6",
+    accentB: "#b9ff45",
+    structureColor: "#e8dfd0",
+    structureClass: "CONCRETE",
+    props: [
+      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 3 },
+      { materialClass: "FABRIC", color: "#65d8ff", kind: "SHELF", weight: 3 },
+      { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2 },
+      { materialClass: "WOOD", color: "#c98a52", kind: "RAIL", weight: 3 },
+      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 2 },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 1 },
+      { materialClass: "PLASTIC", color: "#4c7a4e", kind: "PLANT", weight: 1 },
+    ],
+  },
+  WAREHOUSE: {
+    road: { materialClass: "CONCRETE", color: "#4a4e54" },
+    wall: { materialClass: "PAINTED_METAL", color: "#5a6068" },
+    kerbLight: "#ffc02e",
+    kerbDark: "#3a3f49",
+    accentA: "#ffc02e",
+    accentB: "#3e6e9e",
+    structureColor: "#5a6068",
+    structureClass: "PAINTED_METAL",
+    props: [
+      { materialClass: "PAINTED_METAL", color: "#5a6068", kind: "SHELF", weight: 4 },
+      { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 5 },
+      { materialClass: "PLASTIC", color: "#3e6e9e", kind: "PALLET", weight: 3 },
+      { materialClass: "PAINTED_METAL", color: "#ffc02e", kind: "MACHINE", weight: 2 },
+      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 2 },
+      { materialClass: "PAPER", color: "#f7f2e8", kind: "SIGN", weight: 1 },
+    ],
+  },
+  PRINT_FACTORY: {
+    road: { materialClass: "CONCRETE", color: "#2b2732" },
+    wall: { materialClass: "PAINTED_METAL", color: "#3a3f49" },
+    kerbLight: "#ffd43b",
+    kerbDark: "#8f5cff",
+    accentA: "#8f5cff",
+    accentB: "#ff6b2c",
+    structureColor: "#3a3f49",
+    structureClass: "PAINTED_METAL",
+    props: [
+      { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 5 },
+      { materialClass: "INK", color: "#8f5cff", kind: "BOX", weight: 3 },
+      { materialClass: "INK", color: "#ff3da6", kind: "BOX", weight: 2 },
+      { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 3 },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 2 },
+      { materialClass: "FABRIC", color: "#ffd43b", kind: "SHELF", weight: 2 },
+    ],
+  },
+  OFFICE: {
+    road: { materialClass: "FLOOR_TILE", color: "#8c8378" },
+    wall: { materialClass: "WOOD", color: "#a2764b" },
+    kerbLight: "#f7f2e8",
+    kerbDark: "#65d8ff",
+    accentA: "#65d8ff",
+    accentB: "#b9ff45",
+    structureColor: "#e6e1d8",
+    structureClass: "CONCRETE",
+    props: [
+      { materialClass: "WOOD", color: "#a2764b", kind: "MACHINE", weight: 4 },
+      { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 3 },
+      { materialClass: "PLASTIC", color: "#4c7a4e", kind: "PLANT", weight: 3 },
+      { materialClass: "PAPER", color: "#f7f2e8", kind: "BOX", weight: 3 },
+      { materialClass: "PLASTIC", color: "#2b2732", kind: "MACHINE", weight: 2 },
+      { materialClass: "FABRIC", color: "#ff3da6", kind: "SHELF", weight: 1 },
+    ],
+  },
+  MANGA: {
+    road: { materialClass: "FLOOR_TILE", color: "#252036" },
+    wall: { materialClass: "PAINTED_METAL", color: "#1b1630" },
+    kerbLight: "#ff3da6",
+    kerbDark: "#8f5cff",
+    accentA: "#ff3da6",
+    accentB: "#65d8ff",
+    structureColor: "#1b1630",
+    structureClass: "CONCRETE",
+    props: [
+      { materialClass: "NEON", color: "#ff3da6", kind: "SIGN", weight: 4 },
+      { materialClass: "NEON", color: "#65d8ff", kind: "SIGN", weight: 3 },
+      { materialClass: "SCREEN", color: "#8f5cff", kind: "SCREEN", weight: 3 },
+      { materialClass: "FABRIC", color: "#8f5cff", kind: "CROWD", weight: 4 },
+      { materialClass: "FABRIC", color: "#ff3da6", kind: "CROWD", weight: 3 },
+      { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 2 },
+    ],
+  },
+};
+
+export function visualsForTheme(theme: string): ThemeVisuals {
+  return THEME_VISUALS[theme] ?? THEME_VISUALS.FLAGSHIP!;
+}
+
+export type BuiltFeature = {
   kind: string;
-  phase: number;
+  position: Vector3;
+  node: TransformNode | null;
+  progress: number;
   cooldown: number;
+  power: number;
+  label?: string;
 };
 
 export type BuiltTrack = {
-  definition: TrackDefinition;
-  itemBoxes: Array<{ node: TransformNode; position: Vector3; cooldown: number }>;
-  boostPads: Vector3[];
-  jumpPads: Vector3[];
-  hazards: BuiltHazard[];
-  shortcutPads: Vector3[];
-  width: number;
-  lengthMeters: number;
-  stored: StoredTrack;
+  baked: BakedTrack;
+  lighting: LightingRig;
+  materials: MaterialLibrary;
+  boostPads: BuiltFeature[];
+  jumpPads: BuiltFeature[];
+  itemBoxes: BuiltFeature[];
+  hazards: BuiltFeature[];
+  landmarks: BuiltFeature[];
+  shortcuts: Array<{ from: number; to: number; pads: Vector3[] }>;
+  /** Objects the runtime animates each frame. */
+  animated: Array<{ mesh: TransformNode; phase: number; kind: string }>;
+  dispose: () => void;
 };
 
-const SURFACE_COLORS: Record<TrackSurface, string> = {
-  ASPHALT: "#17151c",
-  CARDBOARD: "#7b5435",
-  METAL: "#343a43",
-  WOOD: "#654635",
-  INK: "#342041",
+/** Deterministic per-track scatter, so the same circuit always dresses itself the same way. */
+function seededRandom(seed: number): () => number {
+  let state = (seed >>> 0) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return ((state >>> 0) % 1_000_000) / 1_000_000;
+  };
+}
+
+export type BuildTrackOptions = {
+  quality: QualityLevel;
+  /** Reduces trackside prop density on weaker devices. 1 is full. */
+  density?: number;
 };
 
-const THEME_ACCENTS = {
-  FLAGSHIP: ["#ff3da6", "#b9ff45"],
-  WAREHOUSE: ["#ffb547", "#ff623d"],
-  PRINT_FACTORY: ["#8f5cff", "#65d8ff"],
-  OFFICE: ["#65d8ff", "#b9ff45"],
-  MANGA: ["#ff3da6", "#8f5cff"],
-} as const;
+export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackOptions): BuiltTrack {
+  const theme = baked.blueprint.theme;
+  const visuals = visualsForTheme(theme);
+  const materialQuality: MaterialQuality = options.quality;
+  const materials = new MaterialLibrary(scene, materialQuality);
+  const nodes = baked.definition.nodes;
+  const density = options.density ?? 1;
+  const random = seededRandom(hashString(baked.blueprint.id));
 
-export function buildFlagshipStore(scene: Scene, stored: StoredTrack = TrackPresets[0]!): BuiltTrack {
-  const definition = stored.definition;
-  const [accentAHex, accentBHex] = THEME_ACCENTS[stored.config.theme];
-  const accentA = createEmissiveMaterial(scene, "track-accent-a", Color3.FromHexString(accentAHex));
-  const accentB = createEmissiveMaterial(scene, "track-accent-b", Color3.FromHexString(accentBHex));
-  const paper = material(scene, "paper", Color3.FromHexString("#f7f2e8"), .9);
-  const dark = material(scene, "dark", Color3.FromHexString("#0b0b0f"), .82);
-  const floorMaterial = material(scene, "venue-floor", Color3.FromHexString("#242128"), .98);
-  const maxSpan = Math.max(stored.config.radiusX, stored.config.radiusZ) * 2 + 54;
-  const floor = MeshBuilder.CreateGround("venue-floor", { width: maxSpan, height: maxSpan, subdivisions: 1 }, scene);
-  floor.position.y = -1.15;
-  floor.material = floorMaterial;
-  floor.receiveShadows = true;
-
-  const left: Vector3[] = [];
-  const right: Vector3[] = [];
-  definition.racingSpline.forEach((point, index) => {
-    const previous = definition.racingSpline[(index - 1 + definition.racingSpline.length) % definition.racingSpline.length]!;
-    const next = definition.racingSpline[(index + 1) % definition.racingSpline.length]!;
-    const tangent = new Vector3(next.x - previous.x, next.y - previous.y, next.z - previous.z).normalize();
-    const normal = new Vector3(-tangent.z, 0, tangent.x).normalize();
-    const center = new Vector3(point.x, point.y + .04, point.z);
-    const halfWidth = stored.segments[index]!.width / 2;
-    left.push(center.add(normal.scale(halfWidth)));
-    right.push(center.subtract(normal.scale(halfWidth)));
+  const lighting = new LightingRig(scene, {
+    quality: options.quality,
+    zones: zonesForTheme(theme),
+    clearColor: visuals.structureColor,
+    theme,
   });
-  left.push(left[0]!.clone());
-  right.push(right[0]!.clone());
-  const road = MeshBuilder.CreateRibbon("track-road", { pathArray: [left, right], closePath: false, sideOrientation: Mesh.DOUBLESIDE }, scene);
-  road.material = material(scene, "track-road-material", Color3.FromHexString("#15131a"), .9);
+
+  // ------------------------------------------------------------------ road
+  const road = buildRoadSurface(scene, nodes, "track-road", { tileLength: 8, shoulder: 0.4 });
+  road.material = materials.get({ ...visuals.road, tile: 6 });
   road.receiveShadows = true;
 
-  const surfaceMaterials = new Map<TrackSurface, PBRMaterial>();
-  (Object.keys(SURFACE_COLORS) as TrackSurface[]).forEach((surface) => surfaceMaterials.set(surface, material(scene, `surface-${surface}`, Color3.FromHexString(SURFACE_COLORS[surface]), .82)));
-  const barrierBase = MeshBuilder.CreateBox("barrier-base", { width: 1.45, height: .62, depth: .32 }, scene);
-  barrierBase.material = accentA;
-  barrierBase.isVisible = false;
-  const dashBase = MeshBuilder.CreateBox("dash-base", { width: .14, height: .035, depth: 1.7 }, scene);
-  dashBase.material = paper;
-  dashBase.isVisible = false;
+  // A painted racing line. It tells the player where to be before any HUD does, and it gives the
+  // ground a feature that passes at speed, which is half of speed perception.
+  const lineMaterial = materials.glow("racing-line", visuals.accentA, 0.35);
 
-  for (let index = 0; index < definition.racingSpline.length; index += 4) {
-    const point = definition.racingSpline[index]!;
-    const next = definition.racingSpline[(index + 1) % definition.racingSpline.length]!;
-    const tangent = new Vector3(next.x - point.x, 0, next.z - point.z).normalize();
-    const normal = new Vector3(-tangent.z, 0, tangent.x);
-    const segment = stored.segments[index]!;
-    for (const side of [-1, 1]) {
-      const barrier = barrierBase.createInstance(`barrier-${index}-${side}`);
-      barrier.position.set(point.x + normal.x * (segment.width / 2 + .36) * side, point.y + .31, point.z + normal.z * (segment.width / 2 + .36) * side);
-      barrier.rotation.y = Math.atan2(tangent.x, tangent.z);
-      barrier.rotation.z = segment.banking * side;
+  // ------------------------------------------------------------------ walls
+  const wallMaterial = materials.get({ ...visuals.wall, tile: 3 });
+  const walls: Mesh[] = [];
+  for (const side of [1, -1] as const) {
+    const wall = buildWallSurface(scene, nodes, side, 1.1, `track-wall-${side > 0 ? "l" : "r"}`, 3);
+    if (!wall) continue;
+    wall.material = wallMaterial;
+    wall.receiveShadows = true;
+    walls.push(wall);
+  }
+
+  // ------------------------------------------------------------------ kerbs, lanes, markings
+  // A kerb has a chamfered inner edge the tyre rides up. A box has none, which is why the V4 kerbs
+  // read as painted stripes lying on the floor rather than as raised concrete.
+  const kerbSource = beveledBox(scene, "track-kerb", {
+    width: 1.3,
+    height: 0.15,
+    depth: 2.5,
+    bevel: 0.05,
+    cornerRadius: 0.06,
+  });
+  kerbSource.material = materials.get({ materialClass: "CONCRETE", color: "#f7f2e8", tile: 1.2 });
+  kerbSource.isVisible = false;
+  kerbSource.registerInstancedBuffer("color", 4);
+
+  // Painted marking, not an object: the art bible exempts road and signage planes from bevel.
+  const laneSource = MeshBuilder.CreateBox("track-lane", { width: 0.3, height: 0.02, depth: 3.4 }, scene);
+  laneSource.material = lineMaterial;
+  laneSource.isVisible = false;
+
+  const kerbLight = Color3.FromHexString(visuals.kerbLight);
+  const kerbDark = Color3.FromHexString(visuals.kerbDark);
+
+  let nextLane = 0;
+  let nextProp = 0;
+  const propSources = createPropSources(scene, materials, visuals.props, options.quality);
+  const propWeights = buildWeightTable(visuals.props);
+  const animated: BuiltTrack["animated"] = [];
+  let propCount = 0;
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]!;
+    const frame = frameAt(nodes, index);
+    const half = node.width * 0.5;
+    const curvature = curvatureAt(nodes, index);
+
+    // Kerbs mark the inside of real corners rather than being spread evenly.
+    if (Math.abs(curvature) > 0.014 && index % 2 === 0) {
+      const side = curvature > 0 ? -1 : 1;
+      const kerb = kerbSource.createInstance(`kerb-${index}`);
+      kerb.position.set(node.x + frame.nx * half * side, node.y + 0.08, node.z + frame.nz * half * side);
+      kerb.rotation.y = frame.heading;
+      kerb.rotation.z = node.banking * side;
+      const stripe = Math.floor(node.distance / 2.5) % 2 === 0;
+      kerb.instancedBuffers.color = stripe
+        ? new Color4(kerbLight.r, kerbLight.g, kerbLight.b, 1)
+        : new Color4(kerbDark.r, kerbDark.g, kerbDark.b, 1);
     }
-    if (index % 8 === 0) {
-      const dash = dashBase.createInstance(`dash-${index}`);
-      dash.position.set(point.x, point.y + .11, point.z);
-      dash.rotation.y = Math.atan2(tangent.x, tangent.z);
+
+    if (node.distance >= nextLane) {
+      nextLane = node.distance + 9;
+      const lane = laneSource.createInstance(`lane-${index}`);
+      lane.position.set(node.x, node.y + 0.035, node.z);
+      lane.rotation.y = frame.heading;
     }
-    if (index % 20 === 0) {
-      const zone = MeshBuilder.CreateBox(`surface-zone-${index}`, { width: segment.width - 1.25, height: .025, depth: 4 }, scene);
-      zone.position.set(point.x, point.y + .085, point.z);
-      zone.rotation.y = Math.atan2(tangent.x, tangent.z);
-      zone.material = surfaceMaterials.get(segment.surface)!;
+
+    // ---------------------------------------------------------------- trackside props
+    // Placed by distance so no stretch of road is ever empty. The art bible requires at least four
+    // context-layer objects visible per side; one cluster every 11 m at full density delivers that.
+    if (node.distance >= nextProp) {
+      nextProp = node.distance + 11 / Math.max(0.35, density);
+      for (const side of [1, -1] as const) {
+        if (random() > 0.86) continue;
+        const spec = propWeights[Math.floor(random() * propWeights.length)]!;
+        const source = propSources.get(spec.kind);
+        if (!source) continue;
+        const distance = half + 2.6 + random() * 5;
+        const instance = source.mesh.createInstance(`prop-${index}-${side}`);
+        instance.position.set(
+          node.x + frame.nx * distance * side,
+          node.y + (spec.kind === "SCREEN" || spec.kind === "SIGN" ? 2.6 + random() * 1.6 : 0),
+          node.z + frame.nz * distance * side,
+        );
+        instance.rotation.y = frame.heading + (side > 0 ? Math.PI : 0) + (random() - 0.5) * 0.3;
+        // Seeded scale and tint variation: two identical copies of a prop in one frame is the
+        // failure mode the art bible calls out.
+        const scale = 0.82 + random() * 0.5;
+        instance.scaling.setAll(scale);
+        const tint = Color3.FromHexString(spec.color);
+        const shade = 0.86 + random() * 0.3;
+        instance.instancedBuffers.color = new Color4(tint.r * shade, tint.g * shade, tint.b * shade, 1);
+        propCount += 1;
+        if (spec.kind === "SCREEN" || spec.kind === "SIGN") {
+          animated.push({ mesh: instance as unknown as TransformNode, phase: random() * 6.28, kind: spec.kind });
+        }
+      }
     }
   }
 
-  createStartLine(scene, paper, dark, accentA, definition, stored.config.width);
-  createLandmarks(scene, stored, accentA, accentB, dark);
-  createVenue(scene, stored, accentA, accentB, paper, dark);
+  // ------------------------------------------------------------------ features
+  const nodeAt = (progress: number): TrackNode => nodes[Math.floor(((progress % 1) + 1) % 1 * nodes.length) % nodes.length]!;
 
-  const boostIndexes = [.12, .46, .81].map((value) => Math.floor(definition.racingSpline.length * value));
-  const boostPads = boostIndexes.map((index, padIndex) => createTrackPad(scene, definition, index, `boost-${padIndex}`, accentB, dark, 3.6, 5.4));
-  const jumpIndexes = [.235, .625].map((value) => Math.floor(definition.racingSpline.length * value));
-  const jumpPads = jumpIndexes.map((index, padIndex) => createRamp(scene, definition, index, `jump-${padIndex}`, accentA, dark));
-  const shortcutPads = stored.shortcuts.flatMap((shortcut, index) => createShortcut(scene, stored, shortcut.startProgress, shortcut.endProgress, shortcut.risk, index, accentA, dark));
+  const boostPads: BuiltFeature[] = [];
+  const jumpPads: BuiltFeature[] = [];
+  const itemBoxes: BuiltFeature[] = [];
+  const hazards: BuiltFeature[] = [];
+  const landmarks: BuiltFeature[] = [];
+  const shortcuts: BuiltTrack["shortcuts"] = [];
 
-  const itemIndexes = [.07, .18, .31, .42, .54, .66, .77, .89].map((value) => Math.floor(definition.racingSpline.length * value));
-  const itemBoxes = itemIndexes.map((splineIndex, index) => {
-    const point = definition.racingSpline[splineIndex]!;
-    const next = definition.racingSpline[(splineIndex + 1) % definition.racingSpline.length]!;
-    const tangent = new Vector3(next.x - point.x, 0, next.z - point.z).normalize();
-    const normal = new Vector3(-tangent.z, 0, tangent.x);
-    const lane = index % 2 ? -1.8 : 1.8;
-    const node = new TransformNode(`item-box-${index}`, scene);
-    node.position.set(point.x + normal.x * lane, point.y + 1.28, point.z + normal.z * lane);
-    const frame = MeshBuilder.CreateBox(`item-cube-${index}`, { size: 1.18 }, scene);
-    frame.parent = node;
-    frame.rotation.set(.35, .45, .12);
-    frame.material = index % 2 ? accentB : accentA;
-    const core = MeshBuilder.CreateSphere(`item-core-${index}`, { diameter: .46, segments: 8 }, scene);
-    core.parent = node;
-    core.material = paper;
-    return { node, position: node.position.clone(), cooldown: 0 };
-  });
+  const boostMaterial = materials.glow("boost-pad", visuals.accentB, 1.2);
+  const itemMaterialA = materials.glow("item-a", visuals.accentA, 0.9);
+  const itemMaterialB = materials.glow("item-b", visuals.accentB, 0.9);
+  const hazardMaterial = materials.get({ materialClass: "PAINTED_METAL", color: visuals.accentA });
 
-  const hazards = stored.segments.filter((segment) => segment.hazard !== "NONE").map((segment, index) => {
-    const point = definition.racingSpline[segment.index]!;
-    const node = new TransformNode(`hazard-${index}`, scene);
-    node.position.set(point.x, point.y, point.z);
-    const warning = MeshBuilder.CreateTorus(`hazard-warning-${index}`, { diameter: 5.4, thickness: .16, tessellation: 24 }, scene);
-    warning.parent = node;
-    warning.position.y = .14;
-    warning.material = accentA;
-    const obstacle = MeshBuilder.CreateBox(`hazard-body-${index}`, { width: 1.8, height: 1.8, depth: 1.8 }, scene);
-    obstacle.parent = node;
-    obstacle.position.y = 1.2;
-    obstacle.material = dark;
-    return { node, position: node.position.clone(), progress: segment.progress, kind: segment.hazard, phase: index * 1.17, cooldown: 0 };
-  });
+  for (const feature of baked.blueprint.features) {
+    if (feature.kind === "BOOST") {
+      const node = nodeAt(feature.progress);
+      const frame = frameAt(nodes, nodes.indexOf(node));
+      // A recessed plate with three chevrons pointing down the track. The direction cue is the whole
+      // point of a boost pad, and a plain glowing rectangle does not carry one.
+      const pad = new TransformNode(`boost-${feature.progress}`, scene);
+      pad.position.set(node.x + frame.nx * feature.lane, node.y + 0.06, node.z + frame.nz * feature.lane);
+      pad.rotation.y = frame.heading;
+      const plate = beveledBox(scene, `boost-plate-${feature.progress}`, {
+        width: 5,
+        height: 0.1,
+        depth: 7,
+        bevel: 0.04,
+      });
+      plate.parent = pad;
+      plate.material = materials.get({ materialClass: "PAINTED_METAL", color: "#1c1b22" });
+      for (let chevron = 0; chevron < 3; chevron += 1) {
+        for (const side of [-1, 1] as const) {
+          const blade = beveledBox(scene, `boost-chevron-${feature.progress}-${chevron}-${side}`, {
+            width: 2.1,
+            height: 0.07,
+            depth: 0.55,
+            bevel: 0.03,
+          });
+          blade.parent = pad;
+          blade.position.set(side * 1.05, 0.09, -2 + chevron * 2);
+          blade.rotation.y = side * 0.42;
+          blade.material = boostMaterial;
+        }
+      }
+      boostPads.push({ kind: "BOOST", position: pad.position.clone(), node: pad, progress: feature.progress, cooldown: 0, power: 1 });
+      animated.push({ mesh: pad, phase: feature.progress * 12, kind: "BOOST" });
+    } else if (feature.kind === "JUMP") {
+      const node = nodeAt(feature.progress);
+      const frame = frameAt(nodes, nodes.indexOf(node));
+      // A wedge that actually rises, with a lip at the top and rails down each side.
+      const rampWidth = node.width * 0.78;
+      const ramp = new TransformNode(`jump-${feature.progress}`, scene);
+      ramp.position.set(node.x, node.y, node.z);
+      ramp.rotation.y = frame.heading;
+      const wedge = lofted(
+        scene,
+        `jump-wedge-${feature.progress}`,
+        [
+          { z: -4, halfWidth: rampWidth / 2, halfHeight: 0.06, y: 0.06, radius: 0.05 },
+          { z: 0, halfWidth: rampWidth / 2, halfHeight: 0.42, y: 0.42, radius: 0.12 },
+          { z: 3.6, halfWidth: rampWidth / 2, halfHeight: 0.86, y: 0.86, radius: 0.14 },
+          { z: 4, halfWidth: rampWidth / 2, halfHeight: 0.8, y: 0.92, radius: 0.1 },
+        ],
+        { cornerSegments: 3 },
+      );
+      wedge.parent = ramp;
+      wedge.material = materials.get({ materialClass: "PAINTED_METAL", color: visuals.accentB, tile: 2 });
+      for (const side of [-1, 1] as const) {
+        const rail = tube(
+          scene,
+          `jump-rail-${feature.progress}-${side}`,
+          [
+            new Vector3((side * rampWidth) / 2, 0.2, -4),
+            new Vector3((side * rampWidth) / 2, 0.7, 0),
+            new Vector3((side * rampWidth) / 2, 1.3, 4),
+          ],
+          0.09,
+          6,
+        );
+        rail.parent = ramp;
+        rail.material = materials.get({ materialClass: "RAW_METAL", color: "#b6bcc4" });
+      }
+      jumpPads.push({ kind: "JUMP", position: ramp.position.clone(), node: ramp, progress: feature.progress, cooldown: 0, power: feature.power });
+    } else if (feature.kind === "ITEM_ROW") {
+      const node = nodeAt(feature.progress);
+      const frame = frameAt(nodes, nodes.indexOf(node));
+      feature.lanes.forEach((lane, slot) => {
+        const holder = new TransformNode(`item-${feature.progress}-${slot}`, scene);
+        holder.position.set(node.x + frame.nx * lane, node.y + 1.5, node.z + frame.nz * lane);
+        // A framed crate with a glowing core rather than a solid emissive cube: the frame gives it a
+        // silhouette against a bright floor, and the core is what actually feeds the bloom.
+        const cube = beveledBox(scene, `item-cube-${feature.progress}-${slot}`, {
+          width: 1.4,
+          height: 1.4,
+          depth: 1.4,
+          bevel: 0.09,
+          cornerRadius: 0.14,
+        });
+        cube.parent = holder;
+        cube.rotation.set(0.4, 0.5, 0.15);
+        cube.material = materials.get({ materialClass: "CARDBOARD", color: "#c9a271" });
+        const core = ellipsoid(scene, `item-core-${feature.progress}-${slot}`, { x: 0.42, y: 0.42, z: 0.42 }, 12, 8);
+        core.parent = cube;
+        core.material = slot % 2 === 0 ? itemMaterialA : itemMaterialB;
+        for (const axis of [0, 1, 2]) {
+          const band = beveledBox(scene, `item-band-${feature.progress}-${slot}-${axis}`, {
+            width: axis === 0 ? 1.48 : 0.11,
+            height: axis === 1 ? 1.48 : 0.11,
+            depth: axis === 2 ? 1.48 : 0.11,
+            bevel: 0.03,
+          });
+          band.parent = cube;
+          band.material = slot % 2 === 0 ? itemMaterialA : itemMaterialB;
+        }
+        itemBoxes.push({
+          kind: "ITEM",
+          position: holder.position.clone(),
+          node: holder,
+          progress: feature.progress,
+          cooldown: 0,
+          power: 1,
+        });
+        animated.push({ mesh: holder, phase: slot * 1.4 + feature.progress * 9, kind: "ITEM" });
+      });
+    } else if (feature.kind === "HAZARD") {
+      const node = nodeAt(feature.progress);
+      const frame = frameAt(nodes, nodes.indexOf(node));
+      const holder = new TransformNode(`hazard-${feature.progress}`, scene);
+      holder.position.set(node.x + frame.nx * feature.lane, node.y, node.z + frame.nz * feature.lane);
+      // A crate hanging from a chain, over a painted warning ring on the floor. The ring is the
+      // telegraph: a hazard the player cannot see coming is a cheap hazard.
+      const body = beveledBox(scene, `hazard-body-${feature.progress}`, {
+        width: 2.2,
+        height: 2.1,
+        depth: 2.2,
+        bevel: 0.07,
+      });
+      body.parent = holder;
+      body.position.y = 1.3;
+      body.material = hazardMaterial;
+      lighting.addShadowCaster(body);
 
-  return { definition, itemBoxes, boostPads, jumpPads, hazards, shortcutPads, width: stored.config.width, lengthMeters: stored.metrics.lengthMeters, stored };
-}
+      const chain = tube(
+        scene,
+        `hazard-chain-${feature.progress}`,
+        [new Vector3(0, 2.3, 0), new Vector3(0, 7.5, 0)],
+        0.06,
+        6,
+      );
+      chain.parent = holder;
+      chain.material = materials.get({ materialClass: "RAW_METAL", color: "#7c838b" });
 
-function createTrackPad(scene: Scene, definition: TrackDefinition, index: number, name: string, glow: StandardMaterial, contrast: PBRMaterial, width: number, depth: number): Vector3 {
-  const point = definition.racingSpline[index]!;
-  const next = definition.racingSpline[(index + 1) % definition.racingSpline.length]!;
-  const pad = MeshBuilder.CreateBox(name, { width, height: .08, depth }, scene);
-  pad.position.set(point.x, point.y + .13, point.z);
-  pad.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
-  pad.material = glow;
-  for (let arrow = -1; arrow <= 1; arrow += 1) {
-    const strip = MeshBuilder.CreateBox(`${name}-strip-${arrow}`, { width: .28, height: .05, depth: depth * .64 }, scene);
-    strip.parent = pad;
-    strip.position.x = arrow * .7;
-    strip.position.y = .07;
-    strip.material = contrast;
+      const ring = revolve(
+        scene,
+        `hazard-ring-${feature.progress}`,
+        [
+          new Vector2(2.3, 0.02),
+          new Vector2(2.9, 0.02),
+          new Vector2(2.9, 0.05),
+          new Vector2(2.3, 0.05),
+        ],
+        24,
+        { capStart: false, capEnd: false },
+      );
+      ring.parent = holder;
+      ring.material = materials.glow(`hazard-ring-glow-${feature.progress}`, visuals.accentA, 0.7);
+      hazards.push({
+        kind: feature.hazard,
+        position: holder.position.clone(),
+        node: holder,
+        progress: feature.progress,
+        cooldown: 0,
+        power: 1,
+      });
+      animated.push({ mesh: holder, phase: feature.progress * 11, kind: "HAZARD" });
+    } else if (feature.kind === "LANDMARK") {
+      const node = nodeAt(feature.progress);
+      const index = nodes.indexOf(node);
+      const frame = frameAt(nodes, index);
+      const offset = node.width * 0.5 + 9;
+      const holder = new TransformNode(`landmark-${feature.label}`, scene);
+      holder.position.set(node.x + frame.nx * offset * feature.side, node.y, node.z + frame.nz * offset * feature.side);
+      /**
+       * A landmark is a hero asset with its own silhouette, chosen from the theme's set and turned to
+       * face the track. V4 used the same 7 x 13 x 7 box with a glowing band for every landmark on
+       * every circuit, which meant they identified nothing and navigated nothing.
+       */
+      const heroKinds = heroesForTheme(theme);
+      const hero = buildHero(
+        scene,
+        materials,
+        heroKinds[landmarks.length % heroKinds.length]!,
+        `landmark-${feature.label}`,
+        { quality: options.quality, accentA: visuals.accentA, accentB: visuals.accentB },
+      );
+      hero.parent = holder;
+      // Turned so its front faces the racing line, which is the only angle the driver ever sees.
+      holder.rotation.y = frame.heading + (feature.side > 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
+      lighting.addShadowCaster(hero as Mesh);
+      landmarks.push({
+        kind: "LANDMARK",
+        position: holder.position.clone(),
+        node: holder,
+        progress: feature.progress,
+        cooldown: 0,
+        power: 1,
+        label: feature.label,
+      });
+    } else if (feature.kind === "SHORTCUT") {
+      const pads: Vector3[] = [];
+      const steps = 14;
+      for (let step = 0; step <= steps; step += 1) {
+        const progress = feature.from + (feature.to - feature.from) * (step / steps);
+        const node = nodeAt(progress);
+        pads.push(new Vector3(node.x, node.y, node.z));
+      }
+      shortcuts.push({ from: feature.from, to: feature.to, pads });
+    }
   }
-  return pad.position.clone();
-}
 
-function createRamp(scene: Scene, definition: TrackDefinition, index: number, name: string, glow: StandardMaterial, dark: PBRMaterial): Vector3 {
-  const point = definition.racingSpline[index]!;
-  const next = definition.racingSpline[(index + 1) % definition.racingSpline.length]!;
-  const ramp = MeshBuilder.CreateBox(name, { width: 4.4, height: .34, depth: 5.8 }, scene);
-  ramp.position.set(point.x, point.y + .22, point.z);
-  ramp.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
-  ramp.rotation.x = -.09;
-  ramp.material = dark;
-  const lip = MeshBuilder.CreateBox(`${name}-lip`, { width: 3.5, height: .08, depth: 1 }, scene);
-  lip.parent = ramp;
-  lip.position.set(0, .24, -1.8);
-  lip.material = glow;
-  return ramp.position.clone();
-}
+  // ------------------------------------------------------------------ start line
+  const start = nodes[0]!;
+  const startFrame = frameAt(nodes, 0);
+  // Chequered start line, laid as alternating painted blocks rather than one white bar.
+  const startGroup = new TransformNode("start-line", scene);
+  startGroup.position.set(start.x, start.y, start.z);
+  startGroup.rotation.y = startFrame.heading;
+  const squares = 14;
+  for (let column = 0; column < squares; column += 1) {
+    for (let row = 0; row < 2; row += 1) {
+      const square = MeshBuilder.CreateBox(
+        `start-square-${column}-${row}`,
+        { width: start.width / squares, height: 0.03, depth: 1.1 },
+        scene,
+      );
+      square.parent = startGroup;
+      square.position.set(
+        -start.width / 2 + (column + 0.5) * (start.width / squares),
+        0.06,
+        -0.55 + row * 1.1,
+      );
+      square.material = (column + row) % 2 === 0
+        ? materials.get({ materialClass: "CONCRETE", color: "#f7f2e8", tile: 0.6 })
+        : materials.get({ materialClass: "CONCRETE", color: "#1b1a20", tile: 0.6 });
+    }
+  }
 
-function createShortcut(scene: Scene, stored: StoredTrack, startProgress: number, endProgress: number, risk: "LOW" | "MEDIUM" | "HIGH", index: number, glow: StandardMaterial, dark: PBRMaterial): Vector3[] {
-  const definition = stored.definition;
-  const startIndex = Math.floor(startProgress * definition.racingSpline.length);
-  const endIndex = Math.floor(endProgress * definition.racingSpline.length);
-  const start = definition.racingSpline[startIndex]!;
-  const end = definition.racingSpline[endIndex]!;
-  const centers: Vector3[] = [];
-  const steps = 12;
-  for (let step = 0; step <= steps; step += 1) {
-    const t = step / steps;
-    const point = new Vector3(
-      start.x + (end.x - start.x) * t,
-      start.y + (end.y - start.y) * t + Math.sin(t * Math.PI) * (risk === "HIGH" ? 1.15 : .35),
-      start.z + (end.z - start.z) * t,
+  /**
+   * A trussed gantry with five light pods. A start line is the first thing the player looks at, and
+   * the countdown needs something in the world to happen on rather than only in the HUD.
+   */
+  for (const side of [-1, 1] as const) {
+    const pillar = lofted(
+      scene,
+      `start-pillar-${side}`,
+      [
+        { z: 0, halfWidth: 0.85, halfHeight: 0.85, y: 0, radius: 0.18 },
+        { z: 3, halfWidth: 0.6, halfHeight: 0.6, y: 0, radius: 0.14 },
+        { z: 9.4, halfWidth: 0.5, halfHeight: 0.5, y: 0, radius: 0.12 },
+      ],
+      { cornerSegments: 4 },
     );
-    centers.push(point);
-    if (step === steps) continue;
-    const nextT = (step + 1) / steps;
-    const next = new Vector3(start.x + (end.x - start.x) * nextT, start.y + (end.y - start.y) * nextT, start.z + (end.z - start.z) * nextT);
-    const length = Vector3.Distance(point, next) + .25;
-    const slab = MeshBuilder.CreateBox(`shortcut-${index}-${step}`, { width: risk === "HIGH" ? 3.1 : 3.8, height: .1, depth: length }, scene);
-    slab.position.copyFrom(point);
-    slab.position.y += .08;
-    slab.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
-    slab.material = step % 3 === 0 ? glow : dark;
+    // Built along Z, stood upright at the trackside.
+    pillar.rotation.x = -Math.PI / 2;
+    pillar.position.set(
+      start.x + startFrame.nx * (start.width * 0.5 + 1.8) * side,
+      start.y,
+      start.z + startFrame.nz * (start.width * 0.5 + 1.8) * side,
+    );
+    pillar.material = materials.get({ materialClass: visuals.structureClass, color: visuals.structureColor, tile: 2 });
+    lighting.addShadowCaster(pillar);
   }
-  createTextSign(scene, `SHORTCUT ${index + 1} / ${risk}`, centers[1]!.add(new Vector3(0, 2.4, 0)), Math.atan2(end.x - start.x, end.z - start.z) + Math.PI, 5.8, 1, "#b9ff45", "#0b0b0f");
-  return centers;
-}
 
-function createStartLine(scene: Scene, paper: PBRMaterial, dark: PBRMaterial, accent: StandardMaterial, definition: TrackDefinition, width: number): void {
-  const point = definition.racingSpline[0]!;
-  const next = definition.racingSpline[1]!;
-  const yaw = Math.atan2(next.x - point.x, next.z - point.z);
-  const normal = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-  for (let index = 0; index < 12; index += 1) {
-    const stripe = MeshBuilder.CreateBox(`start-${index}`, { width: width / 12, height: .06, depth: 1.1 }, scene);
-    const across = -width / 2 + (index + .5) * width / 12;
-    stripe.position.set(point.x + normal.x * across, point.y + .12, point.z + normal.z * across);
-    stripe.rotation.y = yaw;
-    stripe.material = index % 2 ? dark : paper;
-  }
-  [-1, 1].forEach((side) => {
-    const pillar = MeshBuilder.CreateBox(`start-pillar-${side}`, { width: .55, height: 6.8, depth: .55 }, scene);
-    pillar.position.set(point.x + normal.x * (width / 2 + .65) * side, point.y + 3.35, point.z + normal.z * (width / 2 + .65) * side);
-    pillar.material = dark;
+  const spanHalf = start.width * 0.5 + 1.8;
+  const truss = tube(
+    scene,
+    "start-truss",
+    [
+      new Vector3(start.x + startFrame.nx * -spanHalf, start.y + 9.2, start.z + startFrame.nz * -spanHalf),
+      new Vector3(start.x, start.y + 9.6, start.z),
+      new Vector3(start.x + startFrame.nx * spanHalf, start.y + 9.2, start.z + startFrame.nz * spanHalf),
+    ],
+    0.24,
+    8,
+  );
+  truss.material = materials.get({ materialClass: "RAW_METAL", color: "#8f979f" });
+  lighting.addShadowCaster(truss);
+
+  const banner = beveledBox(scene, "start-banner", {
+    width: start.width + 3,
+    height: 1.7,
+    depth: 0.35,
+    bevel: 0.07,
   });
-  const top = MeshBuilder.CreateBox("start-top", { width: width + 1.8, height: 1, depth: .65 }, scene);
-  top.position.set(point.x, point.y + 6.45, point.z);
-  top.rotation.y = yaw;
-  top.material = accent;
-  createTextSign(scene, "PRINT RUSH V4", new Vector3(point.x - Math.sin(yaw) * .36, point.y + 6.45, point.z - Math.cos(yaw) * .36), yaw + Math.PI, 7.6, 1.25, "#f7f2e8", "transparent");
-}
+  banner.position.set(start.x, start.y + 8.1, start.z);
+  banner.rotation.y = startFrame.heading;
+  banner.material = materials.glow("start-banner-glow", visuals.accentA, 0.9);
 
-function createLandmarks(scene: Scene, stored: StoredTrack, accentA: StandardMaterial, accentB: StandardMaterial, dark: PBRMaterial): void {
-  stored.landmarks.forEach((landmark, index) => {
-    const splineIndex = Math.floor(landmark.progress * stored.definition.racingSpline.length);
-    const point = stored.definition.racingSpline[splineIndex]!;
-    const next = stored.definition.racingSpline[(splineIndex + 1) % stored.definition.racingSpline.length]!;
-    const tangent = new Vector3(next.x - point.x, 0, next.z - point.z).normalize();
-    const normal = new Vector3(-tangent.z, 0, tangent.x);
-    const width = stored.segments[splineIndex]!.width;
-    const position = new Vector3(point.x + normal.x * (width / 2 + 4.6) * landmark.side, point.y + 3.4, point.z + normal.z * (width / 2 + 4.6) * landmark.side);
-    const tower = MeshBuilder.CreateBox(`landmark-tower-${index}`, { width: 2.2 + index % 2, height: 6 + index, depth: 2.2 }, scene);
-    tower.position.copyFrom(position);
-    tower.position.y = point.y + tower.scaling.y + (3 + index * .5);
-    tower.material = index % 2 ? accentB : accentA;
-    const signPosition = position.add(new Vector3(0, 3.1 + index * .25, 0));
-    createTextSign(scene, `${index + 1} / ${landmark.label}`, signPosition, Math.atan2(tangent.x, tangent.z) + (landmark.side > 0 ? Math.PI : 0), 8, 1.6, landmark.color, "#0b0b0f");
-    const beacon = MeshBuilder.CreateCylinder(`landmark-beacon-${index}`, { height: 7, diameterTop: .08, diameterBottom: .5, tessellation: 12 }, scene);
-    beacon.position.copyFrom(position.add(new Vector3(0, 5.4 + index * .45, 0)));
-    beacon.material = dark;
-  });
-}
-
-function createVenue(scene: Scene, stored: StoredTrack, accentA: StandardMaterial, accentB: StandardMaterial, paper: PBRMaterial, dark: PBRMaterial): void {
-  const count = window.innerWidth < 800 ? 24 : 42;
-  for (let index = 0; index < count; index += 1) {
-    const angle = index / count * Math.PI * 2;
-    const radiusX = stored.config.radiusX + 14 + (index % 3) * 3;
-    const radiusZ = stored.config.radiusZ + 14 + (index % 4) * 2;
-    const height = 2.4 + (index % 5) * 1.25;
-    const prop = MeshBuilder.CreateBox(`venue-prop-${index}`, { width: 2 + index % 3, height, depth: 2.1 + index % 2 }, scene);
-    prop.position.set(Math.cos(angle) * radiusX, height / 2 - .9, Math.sin(angle) * radiusZ);
-    prop.rotation.y = -angle + (index % 2 ? .15 : -.12);
-    prop.material = index % 7 === 0 ? accentA : index % 5 === 0 ? accentB : index % 3 === 0 ? paper : dark;
+  for (let pod = 0; pod < 5; pod += 1) {
+    const across = (pod - 2) * 1.5;
+    const lamp = revolve(
+      scene,
+      `start-lamp-${pod}`,
+      [
+        new Vector2(0.001, 0),
+        new Vector2(0.34, 0.03),
+        new Vector2(0.36, 0.36),
+        new Vector2(0.28, 0.42),
+        new Vector2(0.001, 0.44),
+      ],
+      12,
+    );
+    lamp.position.set(
+      start.x + startFrame.nx * across,
+      start.y + 7.1,
+      start.z + startFrame.nz * across,
+    );
+    lamp.rotation.x = Math.PI;
+    lamp.material = materials.glow(`start-lamp-glow-${pod}`, "#ff3020", 0.35);
+    animated.push({ mesh: lamp, phase: pod, kind: "START_LAMP" });
   }
-  const center = MeshBuilder.CreateCylinder("venue-center", { height: 3.2, diameter: 13, tessellation: 24 }, scene);
-  center.position.y = .5;
-  center.material = dark;
-  const crown = MeshBuilder.CreateTorus("venue-crown", { diameter: 10.5, thickness: .32, tessellation: 32 }, scene);
-  crown.position.y = 2.25;
-  crown.material = accentA;
-  createTextSign(scene, stored.config.theme.replace("_", " "), new Vector3(0, 4.1, 0), Math.PI, 10, 2, "#f7f2e8", "#0b0b0f");
+
+  return {
+    baked,
+    lighting,
+    materials,
+    boostPads,
+    jumpPads,
+    itemBoxes,
+    hazards,
+    landmarks,
+    shortcuts,
+    animated,
+    dispose: () => {
+      lighting.dispose();
+      materials.dispose();
+      road.dispose();
+      walls.forEach((wall) => wall.dispose());
+      kerbSource.dispose();
+      laneSource.dispose();
+      propSources.forEach((source) => source.mesh.dispose());
+      void propCount;
+    },
+  };
 }
 
-function createTextSign(scene: Scene, text: string, position: Vector3, yaw: number, width: number, height: number, color: string, background: string): void {
-  const texture = new DynamicTexture(`sign-texture-${text}`, { width: 1024, height: 256 }, scene, true);
-  texture.hasAlpha = background === "transparent";
-  texture.drawText(text, null, 168, "800 72px Arial", color, background, true, true);
-  const signMaterial = new StandardMaterial(`sign-material-${text}`, scene);
-  signMaterial.diffuseTexture = texture;
-  signMaterial.emissiveTexture = texture;
-  signMaterial.opacityTexture = background === "transparent" ? texture : null;
-  signMaterial.disableLighting = true;
-  const sign = MeshBuilder.CreatePlane(`sign-${text}`, { width, height }, scene);
-  sign.position.copyFrom(position);
-  sign.rotation.y = yaw;
-  sign.material = signMaterial;
+function buildWeightTable(props: ThemeVisuals["props"]): Array<{ materialClass: MaterialClass; color: string; kind: PropKind }> {
+  const table: Array<{ materialClass: MaterialClass; color: string; kind: PropKind }> = [];
+  for (const prop of props) {
+    for (let repeat = 0; repeat < prop.weight; repeat += 1) {
+      table.push({ materialClass: prop.materialClass, color: prop.color, kind: prop.kind });
+    }
+  }
+  return table;
 }
 
-function material(scene: Scene, name: string, color: Color3, roughness: number): PBRMaterial {
-  const result = new PBRMaterial(name, scene);
-  result.albedoColor = color;
-  result.roughness = roughness;
-  result.metallic = .04;
-  return result;
+function hashString(value: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
 }

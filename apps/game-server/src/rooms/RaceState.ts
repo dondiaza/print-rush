@@ -1,13 +1,29 @@
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { RacePhase } from "@print-rush/game-core";
 
+/**
+ * The replicated kart state.
+ *
+ * V4 sent position, rotation, speed and boost. That is not enough for a remote kart to be drawn
+ * correctly under the V5 model: without the velocity vector a sliding kart is rendered pointing
+ * exactly where it travels, so every drift looks like a grip corner on other players' screens.
+ */
 export class KartStateSchema extends Schema {
   @type("number") x = 0;
   @type("number") y = 0.75;
   @type("number") z = 0;
   @type("number") rotation = 0;
+  /** World-space planar velocity. Required to reproduce slip angle on remote clients. */
+  @type("number") vx = 0;
+  @type("number") vz = 0;
   @type("number") speed = 0;
+  @type("number") verticalSpeed = 0;
   @type("number") boostRemaining = 0;
+  @type("uint8") boostTier = 0;
+  @type("boolean") drifting = false;
+  @type("int8") driftDirection = 0;
+  @type("uint8") driftLevel = 0;
+  @type("boolean") grounded = true;
 }
 
 export class PlayerStateSchema extends Schema {
@@ -29,7 +45,7 @@ export class PlayerStateSchema extends Schema {
 export class RaceStateSchema extends Schema {
   @type("string") roomId = "";
   @type("string") phase = RacePhase.LOBBY;
-  @type("string") trackId = "flagship-store";
+  @type("string") trackId = "tshirt-megastore";
   @type("uint8") lapsRequired = 3;
   @type("number") serverTime = 0;
   @type("number") countdown = 3;
