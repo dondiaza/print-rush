@@ -6,7 +6,7 @@ import type { Character, CharacterSummary, FaceCrop } from "@print-rush/characte
 import * as api from "@/characters/api";
 import { fromDefinition } from "@/characters/bridge";
 import { loadCharacters } from "@/factory/storage";
-import { FaceCropper } from "./FaceCropper";
+import { AutoFramedCropper } from "./AutoFramedCropper";
 
 /**
  * THE CHARACTER STUDIO.
@@ -286,13 +286,32 @@ export function CharacterStudioLibrary() {
     return (
       <section className="studio-step">
         <h2>ENCAJA LA CARA</h2>
-        <FaceCropper
+        <AutoFramedCropper
           file={file}
           busy={busy}
           onCancel={() => setStage({ kind: "PHOTO", character })}
-          onConfirm={(crop: FaceCrop, png: Blob) => {
+          onConfirm={(crop: FaceCrop, png: Blob, skinTone: string | null) => {
             void run(async () => {
               await api.uploadFace(character.id, file, png, crop);
+              /**
+               * The sampled skin goes on before the styling runs.
+               *
+               * Order matters: `processFace` harmonises the photograph's lighting against the
+               * character it belongs to, so it should be reading the tone taken *from that
+               * photograph* rather than whichever palette slot the character was created with. A
+               * failure to save the tone is deliberately not fatal — a face with a slightly wrong
+               * neck is far better than a lost upload.
+               */
+              if (skinTone) {
+                try {
+                  await api.updateCharacter(character.id, {
+                    expectedVersion: character.version,
+                    appearance: { ...character.appearance, skinTone },
+                  });
+                } catch (error) {
+                  console.warn("[face] the sampled skin tone could not be saved", error);
+                }
+              }
               // Styling is a separate call so the upload is durable before any processing begins: a
               // failure here leaves a stored photograph that can be retried, not a lost upload.
               const { preview, warnings } = await api.processFace(character.id);

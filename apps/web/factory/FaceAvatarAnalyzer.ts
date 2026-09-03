@@ -1,11 +1,11 @@
 import { normalizeCharacter, type CharacterDefinition } from "@print-rush/3d-factory";
+// The landmarker moved to its own module when the studio's crop needed it too.
+import { detectFaceLandmarks } from "./faceDetection";
 
 export type FaceAnalysisState = "IDLE" | "VALIDATING" | "LOADING_MODEL" | "ANALYZING" | "DONE" | "ERROR";
 export type FaceQuality = { width: number; height: number; luminance: number; warnings: string[] };
 export type FaceAnalysis = { character: CharacterDefinition; faceCount: number; quality: FaceQuality };
 
-const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
-const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
 export async function analyzeAvatarPhoto(file: File, base: CharacterDefinition, onState: (state: FaceAnalysisState) => void): Promise<FaceAnalysis> {
   onState("VALIDATING");
@@ -17,7 +17,7 @@ export async function analyzeAvatarPhoto(file: File, base: CharacterDefinition, 
     if (bitmap.width < 256 || bitmap.height < 256) throw new Error("La foto es demasiado pequeña. Usa al menos 256 × 256 px.");
     onState("LOADING_MODEL");
     onState("ANALYZING");
-    const faces = await detectFaces(bitmap);
+    const faces = await detectFaceLandmarks(bitmap);
     if (faces.length === 0) throw new Error("No se detectó una cara. Prueba con luz frontal y mirando a cámara.");
     const landmarks = faces[0];
     if (!landmarks || landmarks.length < 455) throw new Error("La cara no tiene suficiente detalle para generar el avatar.");
@@ -74,27 +74,3 @@ function inspectQuality(bitmap: ImageBitmap): FaceQuality {
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
-
-async function detectFaces(bitmap: ImageBitmap): Promise<Array<Array<{ x: number; y: number; z: number }>>> {
-  if (typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined") {
-    let worker: Worker | null = null;
-    try {
-      worker = new Worker(new URL("./faceAnalyzer.worker.ts", import.meta.url), { type: "module", name: "print-rush-face-analyzer" });
-    } catch { worker = null; }
-    if (worker) {
-      return new Promise((resolve, reject) => {
-        const timeout = window.setTimeout(() => { worker.terminate(); reject(new Error("El análisis tardó demasiado. Prueba con una foto más pequeña.")); }, 25_000);
-        worker.onmessage = (event: MessageEvent<{ ok: boolean; landmarks?: Array<Array<{ x: number; y: number; z: number }>>; error?: string }>) => {
-          window.clearTimeout(timeout); worker.terminate();
-          if (event.data.ok && event.data.landmarks) resolve(event.data.landmarks); else reject(new Error(event.data.error ?? "No se pudo analizar la cara."));
-        };
-        worker.onerror = () => { window.clearTimeout(timeout); worker.terminate(); reject(new Error("El worker de análisis no está disponible.")); };
-        worker.postMessage({ id: crypto.randomUUID(), bitmap }, [bitmap]);
-      });
-    }
-  }
-  const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-  const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
-  const landmarker = await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" }, runningMode: "IMAGE", numFaces: 4, minFaceDetectionConfidence: .52, minFacePresenceConfidence: .52, minTrackingConfidence: .5 });
-  try { return (landmarker.detect(bitmap).faceLandmarks ?? []).map((face) => face.map(({ x, y, z }) => ({ x, y, z }))); } finally { landmarker.close(); }
-}

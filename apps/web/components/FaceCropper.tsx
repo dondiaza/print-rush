@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FaceCrop } from "@print-rush/character-core";
+import { offsetLimit } from "@/factory/facePlacement";
 
 /**
  * THE CROP EDITOR.
@@ -25,15 +26,45 @@ export type FaceCropperProps = {
   busy?: boolean;
 };
 
+/**
+ * How the crop opens, and how the detector's answer reaches it.
+ *
+ * The framing is a *starting point*, not a constraint. A detection can pick the wrong face out of a
+ * group, or find a face in a pattern on a shirt, so every manual control stays live and the player
+ * can drag straight out of whatever was suggested. What the detection buys is that the common case —
+ * one person, looking at the camera — needs no adjustment at all, where before it always did.
+ */
+export type FaceFraming = {
+  zoom: number;
+  rotation: number;
+  offset: { x: number; y: number };
+};
+
+export type FaceCropperState = "DETECTING" | "DETECTED" | "MANUAL";
+
 /** The exported crop. 1024 is the brief's face-texture source size; the server reduces from here. */
 const EXPORT_SIZE = 1024;
 
-export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCropperProps) {
+export function FaceCropper({ file, onConfirm, onCancel, busy = false, framing, state = "MANUAL", notice }: FaceCropperProps & {
+  framing?: FaceFraming | null;
+  state?: FaceCropperState;
+  /** What the detector wants to say — more than one face, a head near the edge, a heavy tilt. */
+  notice?: string | null;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  /**
+   * The photograph's pixel dimensions, in state rather than read off the image ref.
+   *
+   * The offset limit depends on the image's aspect ratio, so it has to be available during render —
+   * and reading `imageRef.current` there is exactly what React forbids, because a ref's value is not
+   * part of the render's inputs and a component that depends on it can render stale. Recording the
+   * dimensions when the image loads makes the dependency explicit.
+   */
+  const [source, setSource] = useState<{ width: number; height: number } | null>(null);
   const [rotation, setRotation] = useState(0);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragging = useRef<{ x: number; y: number } | null>(null);
@@ -45,10 +76,25 @@ export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCro
     const image = new Image();
     image.onload = () => {
       imageRef.current = image;
-      // Start with the photo covering the frame, centred — the framing a person expects to see.
-      setZoom(1);
-      setOffset({ x: 0, y: 0 });
-      setRotation(0);
+      setSource({ width: image.width, height: image.height });
+      /**
+       * Opens on the detected face when there is one.
+       *
+       * The old default — the photo covering the frame, centred — is what remains when detection
+       * found nothing or has not finished. It is a reasonable neutral framing and a poor guess at
+       * where a face is: in a photograph taken at arm's length the head occupies maybe a fifth of the
+       * frame and sits above the middle, so the neutral framing put a chest in the card and left the
+       * player to fix it every single time.
+       */
+      if (framing) {
+        setZoom(framing.zoom);
+        setRotation(framing.rotation);
+        setOffset(framing.offset);
+      } else {
+        setZoom(1);
+        setOffset({ x: 0, y: 0 });
+        setRotation(0);
+      }
       setReady(true);
     };
     image.onerror = () => setError("No hemos podido abrir esa imagen. Prueba con otro archivo.");
@@ -56,9 +102,13 @@ export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCro
     return () => {
       URL.revokeObjectURL(url);
       imageRef.current = null;
+      setSource(null);
       setReady(false);
     };
-  }, [file]);
+    // `framing` is a dependency because a detection that resolves *after* the image has loaded must
+    // still reframe it — which is the normal order of events, since decoding a file is faster than
+    // downloading a 3 MB model.
+  }, [file, framing]);
 
   /**
    * Draws the photo into a square canvas at the current framing.
@@ -102,16 +152,48 @@ export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCro
     dragging.current = { x: event.clientX, y: event.clientY };
   };
 
+  /**
+   * How far the photograph may travel at the current zoom.
+   *
+   * Was a flat ±0.5, which is fine at zoom 1 and wrong everywhere else: at zoom 6 the image is six
+   * times the frame, so half a frame of travel is almost none, and a face off to one side could not
+   * be brought to the middle at all. `offsetLimit` derives it from the geometry — the image can move
+   * by half of however much it overhangs the frame — which also makes the guarantee `paint` relies
+   * on exact rather than approximate: there is never a transparent gap at an edge.
+   */
+  const limit = useMemo(
+    () => (source ? offsetLimit(zoom, source.width, source.height) : { x: 0.5, y: 0.5 }),
+    [zoom, source],
+  );
+
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!dragging.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const dx = (event.clientX - dragging.current.x) / rect.width;
     const dy = (event.clientY - dragging.current.y) / rect.height;
     dragging.current = { x: event.clientX, y: event.clientY };
-    // Clamped, so the photo can never be dragged entirely out of the frame.
     setOffset((current) => ({
-      x: Math.max(-0.5, Math.min(0.5, current.x + dx)),
-      y: Math.max(-0.5, Math.min(0.5, current.y + dy)),
+      x: Math.max(-limit.x, Math.min(limit.x, current.x + dx)),
+      y: Math.max(-limit.y, Math.min(limit.y, current.y + dy)),
+    }));
+  };
+
+  /**
+   * Changes the zoom and pulls the offset back inside the new limit in the same step.
+   *
+   * Zooming out shrinks how far the image may travel, so a framing that was legal at zoom 6 opens a
+   * transparent wedge at zoom 1.2 — which the styling pass would then treat as part of the face. Done
+   * here, in the event handler, rather than in an effect that watches the limit: an effect would set
+   * state during a commit it did not cause, and the correction belongs to the interaction that made
+   * it necessary.
+   */
+  const applyZoom = (next: number): void => {
+    setZoom(next);
+    if (!source) return;
+    const bound = offsetLimit(next, source.width, source.height);
+    setOffset((current) => ({
+      x: Math.max(-bound.x, Math.min(bound.x, current.x)),
+      y: Math.max(-bound.y, Math.min(bound.y, current.y)),
     }));
   };
 
@@ -168,24 +250,43 @@ export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCro
 
       {error && <p className="cropper-error">{error}</p>}
 
+      {/* What the detector is doing, and what it wants to say. Three states, because "we are looking
+          for your face" and "we could not find it, do it yourself" are different messages and a
+          player who gets neither assumes the feature is broken. */}
+      <p className={`cropper-status is-${state.toLowerCase()}`} role="status">
+        {state === "DETECTING" && "BUSCANDO LA CARA…"}
+        {state === "DETECTED" && "CARA DETECTADA Y ENCAJADA · AJUSTA SI QUIERES"}
+        {state === "MANUAL" && "ENCÁJALA A MANO: ARRASTRA, AMPLÍA Y NIVELA"}
+      </p>
+      {notice && <p className="cropper-notice">{notice}</p>}
+
       <div className="cropper-controls">
+        {/*
+          The ranges have to cover what the detector can produce, or the sliders fight it.
+
+          Zoom was 1–3 and rotation ±30, which were reasonable bounds for a person dragging by hand
+          and are too narrow now: a face in a group shot needs a zoom near 6, and `placementFor`
+          clamps its own tilt correction at ±45. A slider narrower than the value it displays snaps
+          the framing the moment it is touched, which would have looked like the detection being
+          thrown away at random.
+        */}
         <label>
           <span>ZOOM</span>
           <input
             type="range"
-            min={1}
-            max={3}
-            step={0.01}
+            min={0.4}
+            max={8}
+            step={0.02}
             value={zoom}
-            onChange={(event) => setZoom(Number(event.target.value))}
+            onChange={(event) => applyZoom(Number(event.target.value))}
           />
         </label>
         <label>
           <span>GIRO</span>
           <input
             type="range"
-            min={-30}
-            max={30}
+            min={-45}
+            max={45}
             step={1}
             value={rotation}
             onChange={(event) => setRotation(Number(event.target.value))}
@@ -195,12 +296,21 @@ export function FaceCropper({ file, onConfirm, onCancel, busy = false }: FaceCro
           type="button"
           className="cropper-reset"
           onClick={() => {
+            // Back to the *detected* framing when there is one, not to the neutral default. Undo has
+            // to return what was taken away; resetting to a centred whole photograph would discard
+            // the one thing the player did not have to do by hand.
+            if (framing) {
+              setZoom(framing.zoom);
+              setRotation(framing.rotation);
+              setOffset(framing.offset);
+              return;
+            }
             setZoom(1);
             setRotation(0);
             setOffset({ x: 0, y: 0 });
           }}
         >
-          CENTRAR
+          {framing ? "REENCAJAR" : "CENTRAR"}
         </button>
       </div>
 

@@ -457,6 +457,33 @@
 .controls-sheet__tip { margin: 0; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
 @media (max-width: 640px) { .controls-sheet__columns { grid-template-columns: minmax(0, 1fr); } }
 
+/* ============================================================ FACE CROP */
+
+/* The detector's three states. Colour-coded because the difference between "we are working on it"
+   and "we could not do it, over to you" changes what the player should do next. */
+.cropper-status {
+  margin: 0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-align: center;
+}
+.cropper-status.is-detecting { color: var(--text-faint); }
+.cropper-status.is-detected { color: var(--acid); }
+.cropper-status.is-manual { color: var(--text-dim); }
+/* Amber: a caveat about the framing, not a failure. Two faces found, a head near the edge, a heavy
+   tilt — all of them mean "check this", none of them mean "start again". */
+.cropper-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(255, 192, 46, 0.12);
+  color: #ffc02e;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 /* ============================================================ ERROR */
 
 .pr-error { display: grid; place-items: center; min-height: 100svh; padding: clamp(18px, 5vh, 48px); background: var(--surface-0); }
