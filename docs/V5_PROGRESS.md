@@ -1,17 +1,50 @@
 # PRINT RUSH V5 — PROGRESO
 
-Actualizado: 2026-09-02
+Actualizado: 2026-09-03
 
 Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **124 tests** y build de los cuatro
-workspaces, incluido el export estático.
+Estado del build: `npm run check` **verde** — lint, typecheck, **585 tests** y build de los cinco
+workspaces.
 
 ---
 
 ## DONE
+
+### ETAPA 22 — MUNDO FUERA DE LA CARRETERA Y RESTYLING VISUAL (2026-09-03)
+
+Cinco defectos reportados sobre la carrera resultaron tener ocho causas concretas, y ninguna era un
+problema de assets. Diagnóstico y razonamiento completos en `docs/ART_DIRECTION.md` §13; resumen:
+
+| Síntoma reportado | Causa localizada | Corrección |
+|---|---|---|
+| "Debo poderme salir de la carretera" | `wallLeft/wallRight` con `?? true` y ningún blueprint declarándolos: `queryWall` paraba en el borde del asfalto y `GRASS`/`SAND`/`OFFROAD` eran código muerto | Barrera medida desde el borde del arcén (16 m), arcén conducible, recuperación a 26 m |
+| "Sigue sin tener fondos completos" | No existía suelo: más allá de los muros no había geometría de ningún tipo | `render/Terrain.ts` — arcén lofteado, campo de 700 m de margen, banda sonora instanciada. Tres draw calls, en todos los niveles |
+| "Los elementos de background salen medio invisibles" | Niebla `EXP2` con densidades hasta 0,013: **18 % de visibilidad a 100 m** contra un plano lejano de 900 | Banda remapeada a 0,00055–0,0021 conservando el haze relativo por zona |
+| "Partes donde desaparecen los elementos" | Cúpula de backdrop de radio 260 ocluyendo todo lo más lejano; y `minZ = 0.25` contra `maxZ = 900` → z-fighting a distancia en depth buffers de 16 bits | Radio 820 con horizonte a la altura de los ojos; `minZ = 0.8` |
+| "En mobile se ve mal el texturizado" | Cuatro causas: casi todo teléfono caía a `LOW` (`cores <= 4`), presupuestos de `LOW` a **cero**, anisotropía a 1, y mapas horneados apagados en `LOW` | `LOW` reservado a dispositivos que se declaran pequeños; presupuestos reducidos pero nunca cero; anisotropía 4/8; mapas horneados en todos los niveles |
+| — (encontrado durante el trabajo) | `CreateGround` da UV 0..1 y `MaterialLibrary` escala por `1/tile` asumiendo UV en metros: el suelo pedía una repetición cada diez **kilómetros** | UV del campo y del arcén reescritas en metros |
+| — (encontrado durante el trabajo) | `groundY` extrapolaba `tan(banking) * lateral` sin límite: 40 m fuera de una peraltada ponían el suelo a 7 m de altura | Alabeo saturado en el borde del asfalto |
+| — (consecuencia de abrir el arcén) | Público, vegetación, props y landmarks anclados al borde del asfalto quedaban de pie en la escapatoria, sin collider | Todos anclados a la barrera; la escapatoria queda vacía |
+
+Restyling de imagen, sobre el mismo diagnóstico:
+
+- [x] Relleno **+85 %** y suelo de `keyIntensity` en 2,15 — se modela con tono, no con oscuridad
+- [x] `contrast` 1,15 → 0,96, `exposure` 1,12, `ColorCurves` +26 global y **+38 en sombras**
+- [x] Grano **apagado** (señal de película, contraria a superficies pintadas); SSAO a media fuerza
+- [x] Bloom más ancho y más suave (umbral 0,86 → 0,78, peso 0,42 → 0,30)
+- [x] Tonos base de las superficies oscuras subidos conservando tono: la carretera de la nave de
+      impresión estaba al 20 % de valor, donde ningún normal map se nota
+- [x] Sprites devueltos a la niebla, ahora que la niebla es haze y no cortina
+- [x] Pruebas nuevas: `game-core/tests/offroad.test.ts` (15), `web/tests/terrain.test.ts` (6),
+      `web/tests/lighting.test.ts` (111) — la de niebla asserta lo que ve el jugador, no la constante
+
+**No hecho, y con motivo:** la geometría de la cámara (altura 3,5 m, brazo 8,4 m, FOV 62°) no se ha
+tocado. Bajarla y acercarla acercaría el resultado a la referencia del género, pero es un cambio de
+jugabilidad además de visual —decide cuánto se ve de la curva siguiente— y no hay navegador aquí para
+juzgarlo. Es la propuesta pendiente más clara.
 
 ### ETAPA 1 — AUDITORÍA
 - Auditoría completa con medición determinista, no estimación.

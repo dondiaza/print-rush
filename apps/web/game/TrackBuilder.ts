@@ -8,7 +8,7 @@ import {
   Vector2,
   Vector3,
 } from "@babylonjs/core";
-import type { BakedTrack, TrackNode } from "@print-rush/game-core";
+import { TerrainConfig, type BakedTrack, type TrackNode } from "@print-rush/game-core";
 import { MaterialLibrary, type MaterialClass, type MaterialQuality } from "@/render/MaterialLibrary";
 import { createPropSources, propSourceKey, type PropSpec } from "@/render/PropLibrary";
 import { buildHero, heroesForTheme } from "@/render/HeroAssets";
@@ -20,6 +20,7 @@ import type { AssetCatalog } from "@/render/AssetCatalog";
 import { scatterDecals, type Decals } from "@/render/DecalScatter";
 import { hangPosters, type Posters } from "@/render/PosterWall";
 import { createCrowd, createSpriteDressing, type Crowd } from "@/render/CrowdSprites";
+import { createTerrain, type Terrain } from "@/render/Terrain";
 import { circuitKeyForTheme } from "@/render/AssetCatalog";
 
 /**
@@ -65,11 +66,25 @@ export type ThemeVisuals = {
   structureTexture?: string;
 };
 
+/**
+ * The base tone of every driveable and structural surface.
+ *
+ * These were lifted as part of the restyling, and the reason is specific to a kart racer rather than
+ * general taste. The darkest circuits had roads at 20% value — #2b2732 in the print factory, #252036
+ * in the manga hall — which is the value of a *shadow*, not of a floor. Two things follow from that
+ * and both were reported: a kart, an item and a rumble strip all read as light shapes on a black
+ * ribbon instead of as objects on a surface, and the surface texture itself disappears, because
+ * there is no room below 20% for a normal map or a roughness variation to show up in.
+ *
+ * Every tone here keeps its hue and its relationship to the others — the factory floor is still the
+ * violet-grey one, the manga hall is still the purple one — and is raised to a value where the
+ * material can actually be seen. Nothing was desaturated to get there.
+ */
 const THEME_VISUALS: Record<string, ThemeVisuals> = {
   FLAGSHIP: {
     // Carpet on the aisle, tile on the columns. Both are how a real shop is built, and it puts the
     // soft surface where the kart drives and the hard one where it reflects the lighting rig.
-    road: { materialClass: "FLOOR_TILE", color: "#6e6259", texture: "mat_carpet_store" },
+    road: { materialClass: "FLOOR_TILE", color: "#807267", texture: "mat_carpet_store" },
     wall: { materialClass: "WOOD", color: "#c98a52", texture: "mat_wood_store" },
     kerbLight: "#f7f2e8",
     kerbDark: "#ff3da6",
@@ -92,13 +107,13 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   WAREHOUSE: {
-    road: { materialClass: "CONCRETE", color: "#4a4e54", texture: "mat_concrete_warehouse" },
-    wall: { materialClass: "PAINTED_METAL", color: "#5a6068", texture: "mat_paintedmetal_racking" },
+    road: { materialClass: "CONCRETE", color: "#707680", texture: "mat_concrete_warehouse" },
+    wall: { materialClass: "PAINTED_METAL", color: "#727a85", texture: "mat_paintedmetal_racking" },
     kerbLight: "#ffc02e",
     kerbDark: "#3a3f49",
     accentA: "#ffc02e",
     accentB: "#3e6e9e",
-    structureColor: "#5a6068",
+    structureColor: "#727a85",
     structureClass: "PAINTED_METAL",
     structureTexture: "mat_paintedmetal_racking",
     props: [
@@ -111,13 +126,13 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     ],
   },
   PRINT_FACTORY: {
-    road: { materialClass: "CONCRETE", color: "#2b2732", texture: "mat_concrete_factory" },
-    wall: { materialClass: "PAINTED_METAL", color: "#3a3f49", texture: "mat_paintedmetal_press" },
+    road: { materialClass: "CONCRETE", color: "#5c546b", texture: "mat_concrete_factory" },
+    wall: { materialClass: "PAINTED_METAL", color: "#5f6779", texture: "mat_paintedmetal_press" },
     kerbLight: "#ffd43b",
     kerbDark: "#8f5cff",
     accentA: "#8f5cff",
     accentB: "#ff6b2c",
-    structureColor: "#3a3f49",
+    structureColor: "#5f6779",
     structureClass: "PAINTED_METAL",
     structureTexture: "mat_paintedmetal_press",
     props: [
@@ -157,13 +172,13 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
     // Carpet, not tile: a convention hall floor is carpeted, and it is the one surface here that
     // should look soft. The wall keeps no named base colour, so it takes the theme's own dark violet
     // over the class's baked normal and roughness — the fallback path, exercised in a shipped circuit.
-    road: { materialClass: "FLOOR_TILE", color: "#252036", texture: "mat_carpet_manga" },
-    wall: { materialClass: "PAINTED_METAL", color: "#1b1630" },
+    road: { materialClass: "FLOOR_TILE", color: "#453b68", texture: "mat_carpet_manga" },
+    wall: { materialClass: "PAINTED_METAL", color: "#33285f" },
     kerbLight: "#ff3da6",
     kerbDark: "#8f5cff",
     accentA: "#ff3da6",
     accentB: "#65d8ff",
-    structureColor: "#1b1630",
+    structureColor: "#33285f",
     // The stands are built on timber decking, which is what a convention hall actually is under the
     // carpet, and it gives the one warm surface in an otherwise cold neon space.
     structureClass: "WOOD",
@@ -200,6 +215,7 @@ export type BuiltTrack = {
   lighting: LightingRig;
   materials: MaterialLibrary;
   backdrop: Backdrop;
+  terrain: Terrain;
   decals: Decals;
   posters: Posters;
   crowd: Crowd;
@@ -250,8 +266,21 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     theme,
   });
 
+  // ------------------------------------------------------------------ ground
+  /**
+   * The ground, first.
+   *
+   * There was none until now: a circuit was a road ribbon with walls and a backdrop, and beyond the
+   * walls there was nothing at all. That is why the world looked unfinished *and* why the barrier had
+   * to sit at the tarmac edge — there was nowhere to run wide to.
+   *
+   * Built before the road so the road's own surface is written over it, and before the backdrop so
+   * the backdrop knows how far the ground reaches.
+   */
+  const terrain = createTerrain(scene, nodes, theme, options.quality, materials);
+
   // ------------------------------------------------------------- backdrop
-  // Before the road, so that if the panorama is missing the fallback colour is already decided and
+  // After the ground, so that if the panorama is missing the fallback colour is already decided and
   // there is never a frame with nothing behind the track.
   const backdrop = createBackdrop(scene, theme, options.catalog ?? null, visuals.structureColor);
 
@@ -284,10 +313,22 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   const lineMaterial = materials.glow("racing-line", visuals.accentA, 0.35);
 
   // ------------------------------------------------------------------ walls
+  /**
+   * The barrier, at the far edge of the verge.
+   *
+   * It used to stand at the edge of the tarmac, which is what made every circuit a corridor. It is
+   * built from nodes widened by the same amount `queryWall` uses, so what the player can see and
+   * what the physics enforces are the same line — the alternative is a barrier you drive through or
+   * an invisible one you hit.
+   *
+   * Taller than before, too: at sixteen metres away a 1.1 m wall is a kerb on the horizon. A barrier
+   * that reads as a boundary from the racing line is what tells a driver where the course ends.
+   */
   const wallMaterial = materials.get({ ...visuals.wall, tile: 3 });
+  const barrierNodes = nodes.map((node) => ({ ...node, width: node.width + TerrainConfig.vergeMetres * 2 }));
   const walls: Mesh[] = [];
   for (const side of [1, -1] as const) {
-    const wall = buildWallSurface(scene, nodes, side, 1.1, `track-wall-${side > 0 ? "l" : "r"}`, 3);
+    const wall = buildWallSurface(scene, barrierNodes, side, 2.4, `track-wall-${side > 0 ? "l" : "r"}`, 4);
     if (!wall) continue;
     wall.material = wallMaterial;
     wall.receiveShadows = true;
@@ -360,7 +401,17 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
         // Keyed by kind *and* print: two shirt displays with different designs are two sources.
         const source = propSources.get(propSourceKey(spec.kind, spec.texture));
         if (!source) continue;
-        const distance = half + 2.6 + random() * 5;
+        /**
+         * Props stand beyond the barrier, not on the verge.
+         *
+         * They used to be placed two to seven metres from the road edge, which was two to seven
+         * metres from the wall — outside the world the kart could reach. The verge changed that: a
+         * shelf at that offset is now sitting on driveable ground, with no collider, so a kart runs
+         * wide and drives through a rack of shirts. The run-off has to stay clear of solid objects,
+         * which is also true of the circuits this is modelled on: run-off is flat and empty, and
+         * everything with a silhouette is behind the barrier.
+         */
+        const distance = half + TerrainConfig.vergeMetres + 2.6 + random() * 5;
         const instance = source.mesh.createInstance(`prop-${index}-${side}`);
         instance.position.set(
           node.x + frame.nx * distance * side,
@@ -418,14 +469,15 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       // Only where the wall is actually closed on that side.
       if (side > 0 ? !node.wallLeft : !node.wallRight) return null;
       const frame = frameAt(nodes, index);
-      const half = node.width / 2;
+      // The barrier moved out to the verge edge, so the posters on it move with it. Anchoring them
+      // to the tarmac would have left them floating in the middle of the run-off.
+      const half = node.width / 2 + TerrainConfig.vergeMetres;
       const inward = new Vector3(-frame.nx * side, 0, -frame.nz * side);
       return {
-        // On the barrier's inner face, at eye height for someone standing — which is above a kart,
-        // so a poster is legible over the wall rather than hidden behind it.
+        // On the barrier's inner face, high enough to read over it from the racing line.
         position: new Vector3(
           node.x + frame.nx * side * (half + 0.35),
-          node.y + 2.1 + random() * 0.9,
+          node.y + 2.6 + random() * 1.2,
           node.z + frame.nz * side * (half + 0.35),
         ),
         facing: inward,
@@ -443,7 +495,15 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
       const node = nodes[index]!;
       const frame = frameAt(nodes, index);
-      const half = node.width / 2;
+      /**
+       * `offset` is measured from the barrier, not from the tarmac.
+       *
+       * It used to be measured from the road edge, which was the same line — the wall stood there.
+       * Now that there are sixteen metres of driveable verge between the two, measuring from the
+       * tarmac would put the front rank of spectators seven metres into the run-off: standing on a
+       * surface karts are meant to use, and driven straight through.
+       */
+      const half = node.width / 2 + TerrainConfig.vergeMetres;
       const distance = half + Math.abs(offset);
       const side = Math.sign(offset) || 1;
       return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
@@ -460,7 +520,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
       const node = nodes[index]!;
       const frame = frameAt(nodes, index);
-      const half = node.width / 2;
+      // Beyond the barrier, as the crowd is: a fern in the middle of the run-off is an obstacle, and
+      // a rack of shirts there is a collision the physics knows nothing about.
+      const half = node.width / 2 + TerrainConfig.vergeMetres;
       const side = Math.sign(offset) || 1;
       const distance = half + Math.abs(offset);
       return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
@@ -656,7 +718,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const node = nodeAt(feature.progress);
       const index = nodes.indexOf(node);
       const frame = frameAt(nodes, index);
-      const offset = node.width * 0.5 + 9;
+      // Beyond the barrier, like the props: a landmark is the largest thing beside the track and the
+      // worst thing to leave standing in the middle of the run-off.
+      const offset = node.width * 0.5 + TerrainConfig.vergeMetres + 9;
       const holder = new TransformNode(`landmark-${feature.label}`, scene);
       holder.position.set(node.x + frame.nx * offset * feature.side, node.y, node.z + frame.nz * offset * feature.side);
       /**
@@ -809,6 +873,7 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     lighting,
     materials,
     backdrop,
+    terrain,
     decals,
     posters,
     crowd,
@@ -824,6 +889,7 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       lighting.dispose();
       materials.dispose();
       backdrop.dispose();
+      terrain.dispose();
       decals.dispose();
       posters.dispose();
       crowd.dispose();

@@ -12,19 +12,27 @@ import type { AssetCatalog } from "./AssetCatalog";
 /**
  * BACKDROP DOME.
  *
- * What used to be behind the circuit: a flat clear colour. Whatever the theme, the world ended at
- * the last wall and the space beyond it was one unbroken tone, which is the single clearest tell
- * that a track is a box rather than a place.
+ * What is behind the circuit. The first version of this had three defects that between them account
+ * for most of "the backgrounds are incomplete and things half disappear", and all three came from
+ * one misunderstanding of `infiniteDistance`.
  *
- * This puts the baked panorama there instead — a cylinder seen from the inside, plus a cap in the
- * panorama's own ceiling colour so looking up does not find a hole.
+ * **It sat 73 metres above the camera.** Babylon implements `infiniteDistance` as
+ * `translation = position + cameraPosition` — verified in `transformNode`, not assumed. So a
+ * `position.y` of 73 does not raise the dome in the world, it raises it *relative to the viewer,
+ * permanently*. The panorama's horizon lives at the middle of its height, so the horizon sat 73 m
+ * overhead and the band actually at eye level was the picture's floor.
  *
- * Why a cylinder and not a sphere: the panoramas are cylindrical projections, generated as U around
- * and V floor-to-ceiling with no polar distortion. Mapping one onto a sphere would pinch it at the
- * poles and compress the horizon, which is exactly the band the player actually sees.
+ * **It was open at the bottom.** With the dome that high and no ground beyond the track, looking
+ * down past the road found the hole and, through it, nothing.
  *
- * `infiniteDistance` keeps it centred on the camera, so it reads as distance rather than as a wall
- * the kart could reach, and it can then be small enough to stay well inside the depth range.
+ * **It was smaller than the view.** Radius 260 against a far plane of 900: because the shell is
+ * camera-relative, it formed a 260 m bubble that occluded every poster, spectator and prop further
+ * away than that. On a long straight, half the dressing vanished — which is exactly what "elements
+ * disappear in parts" describes.
+ *
+ * So: the horizon is at eye level, the shell reaches nearly to the far plane, and it is capped above.
+ * Below it needs nothing — the ground plane `Terrain` builds now reaches to within a hundred metres
+ * of the shell, which at eye height is a quarter of a degree of sky between them.
  */
 
 export type Backdrop = {
@@ -34,16 +42,30 @@ export type Backdrop = {
   dispose: () => void;
 };
 
-const RADIUS = 260;
-const HEIGHT = 190;
+/**
+ * Just inside the camera's far plane, which is 900.
+ *
+ * The shell must be farther than anything the player can see or it clips the world; it must be
+ * nearer than the far plane or it is clipped itself. There is exactly one band that satisfies both,
+ * and this is it.
+ */
+const RADIUS = 820;
 
 /**
- * Builds the backdrop for a theme.
+ * Half the shell's height.
  *
- * Returns a cylinder textured with the theme's panorama when the catalog has it, and otherwise a
- * plain two-tone cylinder in `fallbackColor`. The fallback is not much, but it is still better than
- * the flat clear colour: it gives the horizon a line, and a horizon line is what speed reads against.
+ * Symmetric about the camera, and that is forced by the geometry rather than chosen: a cylinder maps
+ * V linearly along its height, so the panorama's horizon always lands on the geometric centre. An
+ * asymmetric shell would need the UVs remapped, which would buy nothing — the composition of each
+ * panorama already decides how much sky it has.
+ *
+ * At radius 820 this puts the top and bottom rims 28 degrees off horizontal. The race camera's
+ * vertical half-field is about 22 degrees and it looks slightly *down* at the kart, so neither rim
+ * enters the view in normal driving; the cap covers above for the moments it does, and the terrain
+ * covers below.
  */
+const HALF_HEIGHT = 440;
+
 export function createBackdrop(
   scene: Scene,
   theme: string,
@@ -56,24 +78,39 @@ export function createBackdrop(
   const mesh = MeshBuilder.CreateCylinder(
     "backdrop",
     {
-      height: HEIGHT,
+      height: HALF_HEIGHT * 2,
       diameter: RADIUS * 2,
       tessellation: 96,
-      // Open at both ends: the top gets its own cap mesh below, and the bottom is under the track.
+      // Open: the top gets its own cap below, and the bottom is covered by the terrain.
       cap: Mesh.NO_CAP,
       // Seen from the inside, so only the back faces are wanted.
       sideOrientation: Mesh.BACKSIDE,
     },
     scene,
   );
-  // Sits with the horizon a little above the road, which is where the panoramas put theirs.
-  mesh.position.y = HEIGHT / 2 - 22;
+  /**
+   * The horizon at eye level, which means no offset at all.
+   *
+   * `position` is added to the camera position, so zero is the only value that puts the geometric
+   * centre — and therefore the panorama's horizon — on the viewer's eye. The previous version set
+   * this to 73 and the one before this comment briefly set it to 180; both raised the horizon above
+   * the player and left the picture's floor band filling the view.
+   */
+  mesh.position.y = 0;
   mesh.infiniteDistance = true;
   mesh.isPickable = false;
   mesh.doNotSyncBoundingInfo = true;
-  // Nothing in the world can be behind it, so it never needs to occlude or be lit.
+  // Nothing can be behind it, so it never needs to occlude, be lit, or be fogged.
   mesh.applyFog = false;
   mesh.receiveShadows = false;
+  /**
+   * Never culled.
+   *
+   * A camera-relative mesh has a bounding box that Babylon computes from its local transform, and a
+   * frustum test against that can decide the sky is off screen. `alwaysSelectAsActiveMesh` is the
+   * documented way out, and a missing sky is not a cost worth risking to skip one test.
+   */
+  mesh.alwaysSelectAsActiveMesh = true;
 
   const material = new StandardMaterial("backdrop-mat", scene);
   // Unlit: a backdrop is a picture of a lit space, not a surface in this one. Leaving it lit would
@@ -89,8 +126,7 @@ export function createBackdrop(
    * where `baseColor` is the diffuse texture times the diffuse colour. A backdrop wants a black
    * diffuse — there is nothing here for a light to hit — and a black `baseColor` multiplies the
    * emissive term to zero, so the panorama would render as a black cylinder. With this flag the
-   * shader takes its other branch and adds the emissive to the output *after* that product, which
-   * is what makes an emissive-only surface possible at all.
+   * shader takes its other branch and adds the emissive to the output *after* that product.
    */
   material.useEmissiveAsIllumination = true;
 
@@ -111,24 +147,34 @@ export function createBackdrop(
   }
   mesh.material = material;
 
-  // The cap. Its colour comes from the panorama's own top edge when there is one, so the join is
-  // not visible; a sampled pixel is not available without reading the image back, so the theme's
-  // structure colour stands in and the cap is kept dim enough that the seam is not the thing you
-  // notice when you look straight up.
-  const cap = MeshBuilder.CreateDisc("backdrop-cap", { radius: RADIUS, tessellation: 48 }, scene);
-  // Parented to the cylinder, so it inherits `infiniteDistance` and follows the camera with it.
+  /**
+   * The cap.
+   *
+   * A disc rather than a hemisphere: the panoramas are cylindrical projections with no polar data, so
+   * there is nothing to map onto a dome and a flat lid in the sky's own colour is both honest and
+   * free. It is high enough above the horizon that it reads as haze rather than as a ceiling.
+   */
+  const cap = MeshBuilder.CreateDisc("backdrop-cap", { radius: RADIUS, tessellation: 64 }, scene);
   cap.parent = mesh;
-  cap.position = new Vector3(0, HEIGHT / 2, 0);
+  cap.position = new Vector3(0, HALF_HEIGHT, 0);
   cap.rotation.x = -Math.PI / 2;
   cap.isPickable = false;
   cap.applyFog = false;
+  cap.alwaysSelectAsActiveMesh = true;
   const capMaterial = new StandardMaterial("backdrop-cap-mat", scene);
   capMaterial.disableLighting = true;
   // Same shader branch as the cylinder, for the same reason.
   capMaterial.useEmissiveAsIllumination = true;
   capMaterial.specularColor = Color3.Black();
   capMaterial.diffuseColor = Color3.Black();
-  capMaterial.emissiveColor = Color3.FromHexString(fallbackColor).scale(0.7);
+  /**
+   * Lit a touch brighter than the fallback tone.
+   *
+   * The panorama's top band is its ceiling or its sky, which is always the brightest part of these
+   * images; a cap at the mid tone reads as a dark lid. Brightening it is what makes the join at the
+   * top of the cylinder stop being the thing you notice when you look up.
+   */
+  capMaterial.emissiveColor = Color3.FromHexString(fallbackColor).scale(1.15);
   // Seen only from underneath.
   capMaterial.backFaceCulling = false;
   cap.material = capMaterial;

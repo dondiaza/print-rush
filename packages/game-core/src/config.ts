@@ -172,6 +172,44 @@ export const SurfaceConfig = Object.freeze({
 
 export type SurfaceName = keyof typeof SurfaceConfig;
 
+/**
+ * The world beyond the road.
+ *
+ * Until now there was none: every node defaulted to having a wall on both sides, so a circuit was a
+ * walled corridor and the surfaces below — grass, sand, off-road — were unreachable. A kart racer
+ * where you cannot put a wheel on the dirt is missing most of its texture, so the road now has a
+ * verge you can drive on, at a real cost in grip, and a limit past which you are put back.
+ */
+export const TerrainConfig = Object.freeze({
+  /**
+   * How far past the road edge the drivable verge extends, in metres.
+   *
+   * Wide enough to cut a corner or run wide and recover, narrow enough that the racing line still
+   * matters. Beyond it the kart is recovered rather than allowed to wander into the backdrop.
+   */
+  vergeMetres: 16,
+  /**
+   * Where recovery triggers, past the road edge.
+   *
+   * Deliberately larger than the verge so the boundary is felt as a consequence rather than as a
+   * wall a metre outside the tarmac: you get a moment of being genuinely lost before being helped.
+   */
+  recoveryMetres: 26,
+  /**
+   * How far the terrain mesh reaches past the widest part of the circuit.
+   *
+   * A *visual* number, not a physical one: it decides how much ground there is to look at, and it is
+   * set from the backdrop shell rather than from taste. That shell sits 820 m from the camera, so a
+   * margin of 700 leaves at most 120 m of gap between where the ground stops and where the backdrop
+   * starts — which, from a camera three metres up, is a quarter of a degree of view. At the 240 this
+   * started as, the gap was 580 m and the ground visibly ended before the horizon did.
+   *
+   * It costs nothing worth counting: the field is one plane with a dozen subdivisions, and the pixels
+   * it covers are the same pixels either way. Only its extent changes, not its fill.
+   */
+  visualMarginMetres: 700,
+});
+
 export const GameplayConfig = Object.freeze({
   allowedLaps: [1, 2, 3, 5] as const,
   countdownSeconds: 3,

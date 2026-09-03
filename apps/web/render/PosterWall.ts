@@ -36,8 +36,14 @@ export type Posters = {
   dispose: () => void;
 };
 
-/** How many posters each quality tier may hang. Each design costs one draw call, not each poster. */
-const BUDGET: Record<string, number> = { LOW: 0, MEDIUM: 14, HIGH: 30, ULTRA: 44 };
+/**
+ * How many posters each quality tier may hang.
+ *
+ * `LOW` used to be zero, which meant the cheapest devices got bare walls — and since most phones
+ * were being classed as LOW, that was most phones. Posters are the wrong thing to cut: they cost one
+ * draw call per *design*, not per poster, and an empty wall is the most visible possible saving.
+ */
+const BUDGET: Record<string, number> = { LOW: 10, MEDIUM: 18, HIGH: 30, ULTRA: 44 };
 
 /** Metres. A poster is roughly A1 to A0 on a wall; the big ones are hoardings. */
 const SIZES: Array<[number, number]> = [

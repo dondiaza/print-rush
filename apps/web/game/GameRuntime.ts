@@ -26,6 +26,8 @@ import {
   resolveKartPair,
   resolveWall,
   sampleTrack,
+  needsRecovery,
+  surfaceAt,
   setVelocityAlongHeading,
   simulateKart,
   surfaceGrip,
@@ -554,7 +556,28 @@ export class GameRuntime {
 
     // ---------------------------------------------------------------- inputs and simulation
     for (const racer of this.racers) {
-      const grip = surfaceGrip(racer.sample.offRoad ? "OFFROAD" : racer.sample.surface);
+      /**
+       * Grip from where the kart actually is, not from a two-way guess.
+       *
+       * `surfaceAt` degrades with distance — road, then verge, then rougher still — so running wide
+       * costs progressively rather than snapping to one off-road value the moment a wheel leaves the
+       * tarmac. One shared function, so the runtime, the bots and the handling lab agree.
+       */
+      const grip = surfaceGrip(surfaceAt(racer.sample));
+
+      /**
+       * Recovery, now that the walls are open.
+       *
+       * Opening the walls without this would leave a plane you can drive across until the backdrop,
+       * which is worse than a wall: a wall at least tells you where the track is. The limit sits well
+       * outside the drivable verge so it reads as being lost rather than as an invisible barrier a
+       * metre off the tarmac.
+       */
+      if (needsRecovery(racer.sample)) {
+        this.recover(racer);
+        if (racer.driver) racer.driver.clearStuck();
+        continue;
+      }
 
       let input;
       if (racer.driver) {
@@ -1093,7 +1116,7 @@ export class GameRuntime {
       inked: this.elapsedMs < this.inkedUntil,
       shuffled: this.elapsedMs < this.shuffledUntil,
       incoming: this.elapsedMs < this.incomingUntil,
-      surface: this.player.sample.offRoad ? "OFFROAD" : this.player.sample.surface,
+      surface: surfaceAt(this.player.sample),
       lastLap: this.lastLapAnnounced,
       slipAngleDeg: Math.round((kart.slipAngle * 180) / Math.PI),
       drifting: kart.driftActive,

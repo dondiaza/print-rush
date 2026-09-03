@@ -20,9 +20,24 @@ export function getDeviceReport(): DeviceReport {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const cores = nav.hardwareConcurrency || 4;
   const memoryGb = nav.deviceMemory ?? null;
+  /**
+   * Which tier a device lands on.
+   *
+   * The old rule dropped to LOW on `mobile && cores <= 4`, and that was the single biggest cause of
+   * "on mobile the texturing looks bad and the background is empty". Safari caps
+   * `hardwareConcurrency` and plenty of capable Android phones report exactly 4, so most phones
+   * landed on LOW — where the poster, crowd, dressing and decal budgets were all zero and
+   * anisotropic filtering was off. The phone was not struggling; it was being told to render an
+   * empty world.
+   *
+   * LOW now means what it says: a device that has actually told us it is small. Everything else gets
+   * MEDIUM, which keeps the dressing and the filtering, and `FrameMonitor` is there to catch a
+   * device that turns out to be slower than it claimed.
+   */
   let profile: RuntimeQuality = "HIGH";
   if (mobile || cores <= 4 || (memoryGb !== null && memoryGb <= 4)) profile = "MEDIUM";
-  if ((mobile && cores <= 4) || (memoryGb !== null && memoryGb <= 2)) profile = "LOW";
+  if (memoryGb !== null && memoryGb <= 2) profile = "LOW";
+  if (mobile && cores <= 2) profile = "LOW";
   if (!mobile && cores >= 12 && (memoryGb === null || memoryGb >= 8)) profile = "ULTRA";
   return { profile: forced ?? profile, automatic: !forced, mobile, reducedMotion, cores, memoryGb, pixelRatio: devicePixelRatio };
 }

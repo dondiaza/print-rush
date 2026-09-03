@@ -468,7 +468,15 @@ export class MaterialLibrary {
         material.useAlphaFromAlbedoTexture = false;
       }
 
-      if (bakedRoughness && this.quality !== "LOW") {
+      /**
+       * Roughness and normal maps apply at every tier now.
+       *
+       * They were gated off at LOW, so the cheapest devices got flat untextured surfaces — and since
+       * most phones were being classed LOW, that was the "bad texturing on mobile" report. The cost
+       * is a texture fetch per pixel on already-drawn geometry, not extra draw calls, and the maps
+       * are 256 px. Dropping them saved almost nothing and cost the entire material read.
+       */
+      if (bakedRoughness) {
         // A greyscale PNG arrives with R = G = B, so the green channel carries roughness. Metalness
         // stays the scalar from the class spec — the bake writes no metalness map, and pretending a
         // roughness map is an ORM would put roughness into the metalness slot.
@@ -481,14 +489,14 @@ export class MaterialLibrary {
 
       // A procedural albedo still earns its place when no baked base colour was named: it is grey
       // variation that the theme's own colour tints, which is how one texture serves many props.
-      const needsProcedural = !bakedBase || (!bakedNormal && this.quality !== "LOW");
+      const needsProcedural = !bakedBase || !bakedNormal;
       const maps = needsProcedural ? this.textureFor(request.materialClass, request.seed ?? 0, tile) : null;
       if (maps && !bakedBase) {
         material.albedoTexture = maps.albedo;
         material.useAlphaFromAlbedoTexture = false;
       }
 
-      if (this.quality !== "LOW") {
+      {
         const normal = bakedNormal ?? maps?.normal ?? null;
         if (normal) {
           material.bumpTexture = normal;
@@ -555,14 +563,29 @@ export class MaterialLibrary {
     albedo.update(true);
     albedo.wrapU = Texture.WRAP_ADDRESSMODE;
     albedo.wrapV = Texture.WRAP_ADDRESSMODE;
-    albedo.anisotropicFilteringLevel = this.quality === "LOW" ? 1 : 4;
+    /**
+     * Anisotropic filtering, on every tier.
+     *
+     * This was 1 at LOW, and it is the direct cause of "the texturing looks bad on mobile": a road
+     * surface is viewed at an extreme grazing angle for the entire race, which is precisely the case
+     * isotropic filtering cannot handle — the tarmac smears into grey mush a few metres ahead. It is
+     * a sampler setting, not geometry or fill rate, and on the one surface that fills half the screen
+     * it is the cheapest visual win available.
+     */
+    albedo.anisotropicFilteringLevel = this.quality === "LOW" ? 4 : 8;
     albedo.uScale = 1 / tile;
     albedo.vScale = 1 / tile;
 
+    /**
+     * Derived at every tier.
+     *
+     * This was skipped at LOW, which combined with the baked maps also being gated meant a
+     * low-tier device rendered every surface as flat colour. It is generated once during load and
+     * costs a texture fetch per pixel afterwards — the gate bought a few milliseconds of startup and
+     * lost the entire material read of the game.
+     */
     const normal =
-      spec.bump > 0 && this.quality !== "LOW"
-        ? deriveNormal(this.scene, albedo, size, spec.bump * 2.4, `nrm-${key}`)
-        : null;
+      spec.bump > 0 ? deriveNormal(this.scene, albedo, size, spec.bump * 2.4, `nrm-${key}`) : null;
     if (normal) {
       normal.wrapU = Texture.WRAP_ADDRESSMODE;
       normal.wrapV = Texture.WRAP_ADDRESSMODE;

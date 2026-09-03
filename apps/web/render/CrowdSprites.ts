@@ -24,8 +24,14 @@ export type Crowd = {
   dispose: () => void;
 };
 
-/** Per-quality budgets. A crowd is cheap, but it is not free, and LOW has no headroom to spare. */
-const BUDGET: Record<string, number> = { LOW: 0, MEDIUM: 60, HIGH: 160, ULTRA: 260 };
+/**
+ * Per-quality budgets.
+ *
+ * `LOW` was zero, which was the wrong call twice over: a whole crowd is *one* draw call through the
+ * sprite manager, so it is close to the cheapest content in the scene, and an empty grandstand is
+ * far more noticeable than a thinner one. Fewer people on a small device, not none.
+ */
+const BUDGET: Record<string, number> = { LOW: 40, MEDIUM: 90, HIGH: 160, ULTRA: 260 };
 
 /** Which family dresses which theme. Absent means this circuit has no ambient crowd. */
 const FAMILY_BY_THEME: Record<string, string> = {
@@ -97,10 +103,21 @@ export function createCrowd(
   // not be pickable — the items system raycasts, and a spectator is not a target.
   manager.isPickable = false;
   manager.texture.hasAlpha = true;
-  // Alpha *test*, not blend. Blended sprites need sorting against each other, and a hundred
-  // unsorted blended quads produce the flickering that gives a sprite crowd away instantly.
   manager.texture.getAlphaFromRGB = false;
-  manager.fogEnabled = false;
+  /**
+   * Fogged with everything else.
+   *
+   * This was off, which was defensible when the fog was thick enough to erase a spectator whole —
+   * but it left the crowd as the one thing in the scene at full contrast at any distance, so the
+   * far grandstand read as a decal pasted over the picture. Now that the fog is a light haze rather
+   * than a curtain (see `ThemeLightingZones`), letting it touch the crowd is what puts the crowd
+   * *in* the world.
+   *
+   * Babylon's sprite renderer does an alpha-tested depth pre-pass and then a blended colour pass, so
+   * a hundred sprites still sort correctly against each other — the flicker this flag used to be
+   * blamed for was never the fog's doing.
+   */
+  manager.fogEnabled = true;
 
   const sprites: Sprite[] = [];
   for (let index = 0; index < budget; index += 1) {
@@ -150,9 +167,10 @@ export function createSpriteDressing(
   sample: (fraction: number, offset: number) => Vector3 | null,
 ): Crowd {
   const families = DRESSING_BY_THEME[theme] ?? [];
-  // Scaled by the same tier factor as the crowd, and skipped entirely on LOW for the same reason.
-  const factor = quality === "LOW" ? 0 : quality === "MEDIUM" ? 0.45 : quality === "ULTRA" ? 1.3 : 1;
-  if (!catalog || factor === 0 || families.length === 0) {
+  // Scaled down on a small device rather than switched off, for the same reason as the crowd: this
+  // is one draw call per family and the plants are what make a corner look like a place.
+  const factor = quality === "LOW" ? 0.4 : quality === "MEDIUM" ? 0.7 : quality === "ULTRA" ? 1.3 : 1;
+  if (!catalog || families.length === 0) {
     return { usedAssetIds: [], count: 0, dispose: () => {} };
   }
 
@@ -177,7 +195,8 @@ export function createSpriteDressing(
     );
     manager.isPickable = false;
     manager.texture.hasAlpha = true;
-    manager.fogEnabled = false;
+    // Fogged, as the crowd is, and for the same reason.
+    manager.fogEnabled = true;
     managers.push(manager);
     usedAssetIds.push(asset.id);
 

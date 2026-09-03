@@ -27,8 +27,14 @@ import type { AssetCatalog, VisualAsset } from "./AssetCatalog";
 
 export type DecalFamily = "ink_splash" | "dirt" | "floor_mark" | "scratch" | "tape" | "label" | "sticker";
 
-/** How many decals each quality tier may spend a draw call on. */
-const BUDGET: Record<string, number> = { LOW: 0, MEDIUM: 10, HIGH: 22, ULTRA: 34 };
+/**
+ * How many decals each quality tier may spend a draw call on.
+ *
+ * These genuinely are one draw call each, so LOW gets a handful rather than the full scatter — but
+ * not zero. A floor with no marks on it is the difference between a road and a corridor, and the
+ * saving from the last six marks is not worth that.
+ */
+const BUDGET: Record<string, number> = { LOW: 6, MEDIUM: 14, HIGH: 22, ULTRA: 34 };
 
 /**
  * Which families dress which theme, in the order they are drawn from.

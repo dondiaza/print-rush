@@ -100,7 +100,24 @@ export class RaceCameraV5 {
 
   constructor(scene: Scene, private profile: CameraProfile) {
     this.camera = new UniversalCamera("race-camera-v5", new Vector3(0, 4, -10), scene);
-    this.camera.minZ = 0.25;
+    /**
+     * The near plane, and why it is not 0.25.
+     *
+     * Depth precision is distributed as `1/z`, so the near plane decides how much of the buffer is
+     * spent on the first metre and how little is left for everything past a hundred. At 0.25 against
+     * a far plane of 900 the ratio is 3600:1, which on a 16-bit depth buffer — what plenty of mobile
+     * GL contexts still hand out — leaves under a metre of resolution at two hundred metres. That is
+     * z-fighting: distant posters, spectators and props flickering in and out against the surfaces
+     * behind them, which is the "parts where elements disappear" in the report, and it is worse on
+     * phones for exactly this reason.
+     *
+     * Nothing is ever close enough for 0.8 to clip. This is a chase camera on an eight-metre boom
+     * that is never shortened, sitting three and a half metres up — above the barriers it might
+     * otherwise pass through. The near metre of the frustum was empty, and it was costing the far
+     * five hundred.
+     */
+    this.camera.minZ = 0.8;
+    // Just past the backdrop shell, which is camera-relative at 820 m.
     this.camera.maxZ = 900;
     this.camera.fov = profile.baseFov;
     this.camera.inputs.clear();

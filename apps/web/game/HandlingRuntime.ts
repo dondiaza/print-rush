@@ -12,6 +12,7 @@ import {
   setVelocityAlongHeading,
   simulateKart,
   surfaceGrip,
+  surfaceAt,
   travelSpeed,
   type BakedTrack,
   type KartState,
@@ -245,7 +246,7 @@ export class HandlingRuntime {
       return;
     }
 
-    const grip = surfaceGrip(this.sample.offRoad ? "OFFROAD" : this.sample.surface);
+    const grip = surfaceGrip(surfaceAt(this.sample));
     const previousBoost = this.kart.boostRemaining;
 
     this.kart = simulateKart(this.kart, input, dt, grip);
@@ -389,7 +390,7 @@ export class HandlingRuntime {
       boostTier: this.kart.boostTier,
       grounded: this.kart.grounded,
       airTime: Number(this.kart.airTime.toFixed(2)),
-      surface: this.sample.offRoad ? "OFFROAD" : this.sample.surface,
+      surface: surfaceAt(this.sample),
       lateralOffset: Number(this.sample.lateral.toFixed(2)),
       offRoad: this.sample.offRoad,
       sector: this.sample.node.sector,

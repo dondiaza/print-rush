@@ -405,3 +405,213 @@ Encontrar una caja en el código no implica un defecto. Lo que decide es la func
 | Kart, personaje | Incorrecto — necesita modelo |
 
 Superficies de calzada y planos de señalización están exentos del bisel obligatorio.
+
+---
+
+## 13. EL MUNDO FUERA DE LA CARRETERA Y EL GRADO DE IMAGEN
+
+Esta sección documenta la reconstrucción visual del 3 de septiembre de 2026. Existe porque cinco
+defectos reportados —"sigue sin tener fondos completos", "debo poderme salir de la carretera", "los
+elementos de background salen medio invisibles", "tiene partes que desaparecen los elementos" y "en
+mobile se ve mal el texturizado"— resultaron tener **ocho causas concretas y localizables**, ninguna
+de ellas un problema de assets. Los assets estaban bien; el mundo que los contenía, no.
+
+### 13.1 No había suelo
+
+Un circuito era una cinta de carretera con un muro a cada lado y un panorama detrás. Más allá de los
+muros no había geometría de ningún tipo. De ahí salen dos quejas a la vez: el mundo parecía
+incompleto *y* no se podía salir de la pista, porque no había a dónde salir.
+
+`render/Terrain.ts` construye ahora tres cosas, en tres draw calls, en todos los niveles de calidad
+incluido el más bajo:
+
+| Elemento | Qué es | Por qué |
+|---|---|---|
+| **Arcén** (`verge`) | Banda conducible de 16 m a cada lado, con la misma superficie lofteada que la carretera y 2 cm por debajo | Hereda el alabeo y la elevación del eje exactamente. Una tira plana aparte se separaría en cada rasante. A la misma altura se leería como un cambio de pintura; mucho más baja, como un bordillo del que el kart se cae |
+| **Campo** (`field`) | Un plano que cubre el circuito y 700 m más allá | El horizonte pasa a ser suelo contra cielo, no geometría que se termina |
+| **Banda sonora** (`rumble`) | Bloques alternos instanciados en el borde del asfalto | Es lo que comunica el límite a velocidad. Un cambio de color no lo hace; una vibración que se ve, sí — el ojo lee la frecuencia del parpadeo como una tasa de avance |
+
+`TerrainConfig` fija los tres números: `vergeMetres: 16`, `recoveryMetres: 26`,
+`visualMarginMetres: 700`. El último se deriva del backdrop, no del gusto: la cúpula está a 820 m de
+la cámara, así que 700 deja como máximo 120 m de hueco entre donde acaba el suelo y donde empieza el
+dibujo — un cuarto de grado de vista desde una cámara a tres metros y medio.
+
+### 13.2 El corredor era un valor por defecto
+
+`wallLeft` y `wallRight` tenían `?? true` en `blueprint.ts` y `path.ts`, y ningún blueprint los
+declara. Todo nodo heredaba muro en ambos lados, así que `queryWall` paraba el kart en el borde del
+asfalto y las entradas `GRASS`, `SAND` y `OFFROAD` de `SurfaceConfig` eran **código muerto**:
+configurado, ajustado, documentado e inalcanzable.
+
+Los muros siguen en `?? true`, y eso fue una decisión deliberada tras probar lo contrario: un
+circuito sin muros es un plano infinito, que es peor que un pasillo — al menos el pasillo te dice
+dónde está la pista. Lo que se movió es el límite. `queryWall` mide desde el borde del arcén:
+
+```ts
+const halfWidth = sample.node.width * 0.5 + TerrainConfig.vergeMetres;
+```
+
+Y la barrera visible se construye con nodos ensanchados en la misma cantidad, para que lo que el
+jugador ve y lo que la física impone sean la misma línea. Con la barrera a 16 m, 1,1 m de altura era
+un bordillo en el horizonte, así que pasa a 2,4 m.
+
+Consecuencias que hubo que perseguir, y esta es la parte que no se ve venir: **todo lo que se
+anclaba al borde del asfalto estaba de pronto dentro de la zona conducible**. El público a 7–16 m,
+la vegetación, los props a 2,6–7,6 m y los landmarks a 9 m quedaban de pie en la escapatoria, sin
+collider, para que un kart los atravesara. Todos ellos se miden ahora desde la barrera. La
+escapatoria queda vacía, que es además como son los circuitos reales: run-off plano y limpio, y todo
+lo que tiene silueta detrás de la barrera.
+
+### 13.3 El alabeo era una rampa infinita
+
+`groundY` extrapolaba `tan(banking) * lateral` sin límite. Inofensivo mientras los muros hacían
+inalcanzable el fuera de pista; una rampa al cielo en el momento en que se abrieron — cuarenta metros
+fuera de una curva peraltada ponían el suelo a siete metros de altura. El alabeo se satura en el
+borde del asfalto, que es también el aspecto de una escapatoria real.
+
+### 13.4 La niebla borraba el mundo
+
+**Esta era la causa principal de "los elementos de background salen medio invisibles", y no por poco.**
+
+La escena usa `FOGMODE_EXP2`, cuya visibilidad cae como `exp(-(distancia · densidad)²)`. Las
+densidades escritas llegaban a 0,013. Eso es:
+
+| Distancia | Visibilidad a densidad 0,013 |
+|---|---|
+| 50 m | 65 % |
+| 100 m | 18 % |
+| 150 m | 2 % |
+
+Contra un plano lejano de cámara de 900 m. Cada espectador, cartel y prop más allá de la siguiente
+curva lo estaba borrando la atmósfera, y ningún trabajo sobre los assets podía notarse mientras eso
+fuera cierto. La banda escrita 0,0018–0,013 se remapea a **0,00055–0,0021**, conservando el haze
+*relativo* de cada zona — una escalera sigue siendo más densa que un escaparate — y dejando el otro
+extremo de un circuito al 85 % de visibilidad en lugar de desaparecido.
+
+`tests/lighting.test.ts` fija esto en términos de lo que ve el jugador, no de las constantes, porque
+una densidad de niebla es un número pequeño en una fila de números pequeños y el fallo que provoca
+parece contenido que falta, no un error de iluminación.
+
+Los sprites vuelven a la niebla. Estaban con `fogEnabled = false`, defendible mientras la niebla era
+lo bastante espesa para borrar a un espectador entero, pero eso dejaba al público como lo único de la
+escena a pleno contraste a cualquier distancia: la grada lejana se leía como una calcomanía pegada
+sobre el cuadro. El renderer de sprites de Babylon hace una pasada de profundidad con alpha test y
+después una de color con blending, así que cien sprites siguen ordenándose bien entre ellos — el
+parpadeo del que se culpaba a este flag nunca fue cosa de la niebla.
+
+### 13.5 El relleno no modelaba nada
+
+Con `fillIntensity` a 0,34–0,58 contra una `keyIntensity` de 1,6–3,2, todo lo que daba la espalda a
+la luz principal caía a casi negro. Eso es una mirada fotográfica y es lo contrario de lo que
+necesita un kart racer: **la referencia del género modela con tono, no con oscuridad** —principal
+cálida contra relleno frío— y mantiene legible todo el cuadro, porque el jugador lee la pista a
+velocidad y no puede permitirse el lado oscuro de nada.
+
+- Relleno **+85 %**, con los colores de relleno elevados en valor y con algo más de croma.
+- Rebote de suelo elevado igual.
+- Suelo de `keyIntensity` en 2,15: la escalera y los probadores siguen siendo la parte oscura de la
+  vuelta en términos relativos, sin ser un sitio donde no se ve.
+- Los **tonos base** de las superficies oscuras subidos: la nave de impresión tenía la carretera al
+  20 % de valor (`#2b2732`), que es el valor de una sombra, no de un suelo. Por debajo del 20 % no
+  queda sitio para que un normal map o una variación de rugosidad se noten. Todos conservan tono y
+  relación entre ellos; ninguno se desaturó para subirlo.
+
+En el grado de imagen: `contrast` de 1,15 a **0,96** (por encima de una curva ACES que ya enrolla
+las sombras, 1,15 las juntaba en un puré), `exposure` a 1,12, y `ColorCurves` con saturación global
++26 y **+38 en sombras** — la propiedad más reconocible de un kart racer luminoso es que nada en él
+es gris: una sombra es una versión más fría y más saturada de la superficie, no una más oscura.
+
+El **grano se apaga**. Estaba activo en los dos niveles altos para tapar banding en degradados
+grandes. Era un mal cambio: el grano animado es una señal *de película* —dice fotografiado, cámara
+en mano, real— y está directamente en contra de las superficies pintadas y limpias que busca este
+restyling. El banding que tapaba lo resuelve mejor la subida de saturación, que da a esos degradados
+croma con el que variar en lugar de solo luminancia.
+
+El **SSAO baja a media fuerza**: a fuerza completa oscurecía cada pliegue y esquina, devolviendo
+gris exactamente donde el relleno lo acababa de quitar. Media fuerza conserva para lo que sirve la
+oclusión: decir al ojo que una caja *está apoyada* en el suelo y no flotando sobre él.
+
+El **bloom** baja de umbral (0,86 → 0,78) y de peso (0,42 → 0,30): más fuentes brillando menos cada
+una, un velo suave y ancho en lugar de unos pocos puntos calientes, que es a lo que se parece un
+circuito iluminado.
+
+### 13.6 El texturizado en móvil: cuatro causas, ninguna de ellas el móvil
+
+1. **Casi todos los teléfonos caían a `LOW`.** La regla era `mobile && cores <= 4`; Safari limita
+   `hardwareConcurrency` y muchísimos Android capaces reportan exactamente 4. Y en `LOW` los
+   presupuestos de carteles, público, vegetación y decals eran **cero** y el filtrado anisotrópico
+   estaba apagado. El teléfono no iba justo: se le estaba pidiendo renderizar un mundo vacío. `LOW`
+   ahora significa lo que dice —un dispositivo que ha declarado ser pequeño— y `FrameMonitor` está
+   para cazar al que resulte más lento de lo que declaró.
+2. **Los presupuestos de `LOW` pasan de cero a reducidos.** Un público entero es *un* draw call a
+   través del sprite manager; un cartel cuesta un draw call por *diseño*, no por cartel. Eran lo
+   equivocado que recortar, y una pared desnuda es el ahorro más visible que existe.
+3. **Filtrado anisotrópico a 1 en `LOW`.** Es la causa directa del texturizado sucio: una carretera
+   se ve en ángulo rasante durante toda la carrera, que es precisamente el caso que el filtrado
+   isotrópico no sabe resolver — el asfalto se convierte en puré gris unos metros más adelante. Es un
+   ajuste de sampler, ni geometría ni fill rate, y en la única superficie que llena media pantalla es
+   la mejora visual más barata disponible. Ahora 4 en `LOW`, 8 en el resto.
+4. **Los mapas horneados estaban apagados en `LOW`.** Cuestan un fetch de textura por píxel sobre
+   geometría ya dibujada, no draw calls, y son de 256 px. Quitarlos no ahorraba casi nada y costaba
+   la lectura entera del material.
+
+### 13.7 Las UV del suelo estaban en el rango equivocado
+
+`MeshBuilder.CreateGround` reparte sus UV de 0 a 1 sobre todo el plano, mientras `MaterialLibrary`
+escala sus texturas por `1 / tile` asumiendo **UV medidas en metros** —lo que la superficie de
+carretera cumple y un plano de suelo no—. En un plano de casi un kilómetro, `tile: 10` pedía una
+repetición de textura cada diez *kilómetros*: el suelo era un píxel estirado de color plano, sin
+detalle a ninguna distancia. Estaba mal en escritorio también; solo se notaba menos, porque había más
+decoración a la que mirar.
+
+El arcén tenía la variante suave del mismo problema: `buildRoadSurface` escribe `u` de 0 a 1 a lo
+ancho, lo que sale cuadrado en la carretera —cuyo ancho se parece a su tile length— pero el arcén es
+tres veces más ancho, así que su textura iba estirada tres a uno justo donde mira un piloto que se
+va largo. Ambas se reescriben en metros, y `tests/terrain.test.ts` lo fija comparando el rango de U
+con el tamaño del plano.
+
+### 13.8 El plano cercano de la cámara costaba el lejano
+
+`minZ = 0.25` contra `maxZ = 900` es una relación de 3600:1, y la precisión de profundidad se
+distribuye como `1/z`. En un depth buffer de 16 bits —lo que aún reparten bastantes contextos GL
+móviles— eso deja menos de un metro de resolución a doscientos metros. Eso es z-fighting: carteles,
+espectadores y props lejanos parpadeando contra las superficies que tienen detrás, que es "las partes
+donde desaparecen los elementos", y es peor en teléfonos por exactamente esta razón.
+
+Nada está nunca lo bastante cerca para que 0,8 recorte: es una cámara de persecución sobre un brazo
+de ocho metros que nunca se acorta, a tres metros y medio de altura — por encima de las barreras que
+podría atravesar. El metro cercano del frustum estaba vacío y costaba los quinientos lejanos.
+
+### 13.9 El backdrop, otra vez
+
+Documentado en la cabecera de `render/BackdropDome.ts`, resumido aquí porque es la última causa: la
+cúpula estaba 73 m **por encima de la cámara** (Babylon implementa `infiniteDistance` como
+`translation = position + cameraPosition`, así que `position.y` no la sube en el mundo, la sube
+respecto al observador de forma permanente), abierta por abajo, y con radio 260 contra un plano
+lejano de 900 — es decir, una burbuja de 260 m que ocluía todo cartel, espectador y prop más lejano
+que eso. En una recta larga desaparecía media decoración.
+
+Ahora: horizonte a la altura de los ojos (`position.y = 0`, el único valor posible — un cilindro mapea
+V linealmente, así que el horizonte del panorama cae siempre en el centro geométrico), radio 820, y
+tapa arriba. Abajo no necesita nada: el suelo llega a 120 m de la cúpula.
+
+Un disco de suelo para la cúpula se escribió y se **descartó**: la geometría dice que un rayo que
+baja lo bastante para alcanzarlo (más de 28°) choca antes con el plano de terreno, a unos metros de
+la cámara. Era una malla que nunca se vería, y se quitó en lugar de dejarla dentro pareciendo útil.
+
+### 13.10 Lo que sigue sin verificarse
+
+No hay navegador en este entorno. Las causas anteriores se diagnosticaron leyendo el shader de
+Babylon, el renderer de sprites y la implementación de `infiniteDistance` —no suponiéndolos— y cada
+corrección tiene una prueba que falla si vuelve. Pero **nadie ha visto el resultado en pantalla**.
+Los números de este restyling son juicios de dirección artística derivados de primeros principios
+(la fórmula de la niebla, la relación de precisión de profundidad, la semántica de las UV), no de
+frames observados.
+
+La geometría de la cámara —altura 3,5 m, brazo 8,4 m, FOV base 62°— **no se ha tocado**. Un kart
+racer del género de referencia usa una cámara más baja y más cerca, y bajarla reforzaría la sensación
+de velocidad, pero es un cambio de jugabilidad además de visual (decide cuánto se ve de la curva
+siguiente) y no hay forma de juzgarlo sin mirarlo. Queda como la propuesta pendiente más clara.
+
+Lo que sí es verificable y está verificado: `npm run check` completo — lint, typecheck, 585 pruebas y
+build de los cinco workspaces.

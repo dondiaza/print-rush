@@ -47,6 +47,7 @@ export class TrackPath {
       banking: defaults.banking ?? 0,
       surface: defaults.surface ?? "ASPHALT",
       sector: defaults.sector ?? 1,
+      // Walled by default, with the barrier at the verge edge — see the note in `blueprint.ts`.
       wallLeft: defaults.wallLeft ?? true,
       wallRight: defaults.wallRight ?? true,
     };

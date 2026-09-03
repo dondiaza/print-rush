@@ -1,4 +1,4 @@
-import { SurfaceConfig, type SurfaceName } from "./config.js";
+import { SurfaceConfig, TerrainConfig, type SurfaceName } from "./config.js";
 import type { SurfaceGrip, TrackDefinition, TrackNode, Vec2, Vec3 } from "./types.js";
 
 /**
@@ -28,6 +28,13 @@ export type TrackSample = {
   normal: Vec2;
   /** True when the kart is beyond the drivable width. */
   offRoad: boolean;
+  /**
+   * How far past the road edge, in metres. Zero on the road.
+   *
+   * `offRoad` answers whether; this answers how badly, which is what lets grip degrade with distance
+   * and gives the recovery limit something to measure.
+   */
+  offRoadDistance: number;
   surface: SurfaceName;
   progress: number;
 };
@@ -97,9 +104,20 @@ export function sampleTrack(track: TrackDefinition, position: Vec3, cursor = -1)
   const segmentLength = Math.hypot(next.x - node.x, next.z - node.z) || 1;
   const t = Math.min(1, Math.max(0, along / segmentLength));
   const centreY = node.y + (next.y - node.y) * t;
-  const groundY = centreY + Math.tan(node.banking) * lateral;
 
   const halfWidth = node.width * 0.5;
+  /**
+   * Banking stops at the road edge.
+   *
+   * The previous version extrapolated `tan(banking) * lateral` without limit, which was harmless
+   * while walls made off-road unreachable and became an infinite ramp the moment they opened: thirty
+   * metres off a banked corner put the ground thirty metres in the air. The verge is flat, at
+   * whatever height the road edge reached, which is also what a real run-off looks like.
+   */
+  const bankedLateral = Math.max(-halfWidth, Math.min(halfWidth, lateral));
+  const groundY = centreY + Math.tan(node.banking) * bankedLateral;
+
+  const offRoadDistance = Math.max(0, Math.abs(lateral) - halfWidth);
   return {
     index: bestIndex,
     node,
@@ -107,7 +125,8 @@ export function sampleTrack(track: TrackDefinition, position: Vec3, cursor = -1)
     groundY,
     tangent,
     normal,
-    offRoad: Math.abs(lateral) > halfWidth,
+    offRoad: offRoadDistance > 0,
+    offRoadDistance,
     surface: node.surface,
     progress: node.progress,
   };
@@ -119,7 +138,16 @@ export function sampleTrack(track: TrackDefinition, position: Vec3, cursor = -1)
  * that is what makes a shortcut or a fall possible.
  */
 export function queryWall(sample: TrackSample, radius: number): { normal: Vec2; penetration: number } | null {
-  const halfWidth = sample.node.width * 0.5;
+  /**
+   * The barrier stands at the far edge of the verge, not at the edge of the road.
+   *
+   * This one line is what makes leaving the road possible. Before it, the limit was the tarmac's own
+   * half-width, so every circuit was a corridor and the grass, sand and off-road entries in
+   * `SurfaceConfig` could never be reached. Now there are sixteen metres of driveable dirt between
+   * the racing surface and anything solid — enough to run wide, lose time to the lost grip, and get
+   * back on.
+   */
+  const halfWidth = sample.node.width * 0.5 + TerrainConfig.vergeMetres;
   const limit = halfWidth - radius;
 
   if (sample.lateral > limit && sample.node.wallLeft) {
@@ -154,4 +182,28 @@ export function headingDeltas(nodes: readonly TrackNode[]): number[] {
     while (delta < -Math.PI) delta += Math.PI * 2;
     return delta;
   });
+}
+
+/**
+ * Whether a kart has wandered far enough off the road to be put back.
+ *
+ * The counterpart to opening the walls. Without a limit, an open circuit is a plane you can drive
+ * across until the backdrop, which is worse than a wall — a wall at least tells you where the track
+ * is. The threshold is well outside the drivable verge so the boundary reads as "I am lost" rather
+ * than as an invisible barrier beside the tarmac.
+ */
+export function needsRecovery(sample: TrackSample): boolean {
+  return sample.offRoadDistance > TerrainConfig.recoveryMetres;
+}
+
+/**
+ * Which surface a position is actually on.
+ *
+ * On the road it is the node's own surface. Past the edge it is the verge, and past the verge it is
+ * rougher still — so running wide costs grip progressively instead of falling off a cliff edge in
+ * the handling. One function, so the runtime, the bots and the handling lab cannot disagree.
+ */
+export function surfaceAt(sample: TrackSample): SurfaceName {
+  if (!sample.offRoad) return sample.surface;
+  return sample.offRoadDistance > TerrainConfig.vergeMetres ? "SAND" : "OFFROAD";
 }

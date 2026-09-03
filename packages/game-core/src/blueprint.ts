@@ -184,6 +184,15 @@ export function bakeTrack(blueprint: TrackBlueprint): BakedTrack {
       banking: banking ?? 0,
       surface: surface ?? ("ASPHALT" as SurfaceName),
       sector: sector ?? 1,
+      /**
+       * Still walled by default — but the wall is no longer at the tarmac.
+       *
+       * These defaults were why the circuits were walled corridors and the off-road surfaces in
+       * `SurfaceConfig` were unreachable. Rather than remove the barrier and leave an unbounded
+       * plane, `queryWall` now sets the limit at the far edge of the drivable verge: the kart can
+       * run wide onto the dirt, lose grip for it, and only then meet something solid. A circuit that
+       * genuinely wants a drop sets these to false and the recovery limit catches the fall.
+       */
       wallLeft: wallLeft ?? true,
       wallRight: wallRight ?? true,
     };
