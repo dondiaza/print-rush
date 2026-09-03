@@ -19,6 +19,14 @@ export type GameInput = {
   brake: number;
   drift: boolean;
   useItem: boolean;
+  /**
+   * A tap of the hop button, edge-triggered.
+   *
+   * Held state would be wrong here: a hop happens once per press, and the same button is held down
+   * for the whole of a drift. So this is a one-frame pulse the input layer raises on key-down, the
+   * way `useItem` is, rather than a mirror of whether the key is down.
+   */
+  hop: boolean;
   respawn: boolean;
 };
 

@@ -49,6 +49,7 @@ describe("authoritative input", () => {
       brake: 0.5,
       drift: false,
       useItem: false,
+      hop: false,
       respawn: false,
     });
   });

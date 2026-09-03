@@ -208,6 +208,7 @@ export class BotDriver {
         brake: 1,
         drift: false,
         useItem: false,
+        hop: false,
         respawn: false,
       });
     }
@@ -335,6 +336,15 @@ export class BotDriver {
       brake,
       drift: this.driftHold > 0,
       useItem: false,
+      /**
+       * Bots do not hop.
+       *
+       * The hop only pays when it is timed to a ramp lip, and timing it needs a model of the
+       * geometry a few metres ahead that this driver does not build. A bot hopping on a guess would
+       * read worse than one that never hops — and the player keeping an edge the AI does not have is
+       * the same trade already made for items, which bots also never use.
+       */
+      hop: false,
       respawn: false,
     });
   }

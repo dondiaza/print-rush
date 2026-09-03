@@ -81,6 +81,37 @@ export type CameraContext = {
   maxBoom?: number;
 };
 
+/**
+ * Which camera the player is looking through.
+ *
+ * `CHASE` is the third-person boom this class was written for. `COCKPIT` is a driver's-eye view: no
+ * boom, rigid to the chassis, and aimed along the kart's own heading rather than along the racing
+ * line. That last difference is the one that matters — a first-person camera that keeps looking at
+ * the ideal line while the kart is sideways in a drift reads as a bug, whereas one bolted to the
+ * chassis is what makes a drift legible from inside it.
+ */
+export type CameraView = "CHASE" | "COCKPIT";
+
+/**
+ * The driver's eye, in metres above the kart's origin.
+ *
+ * Just above where the generated character's head sits, so the view comes from the driver rather
+ * than from the floor of the kart. The head itself is hidden while this view is active — the runtime
+ * does that, because it owns the visual — which leaves the nose and front wheels in shot and nothing
+ * else. That is the whole cockpit: there is no modelled interior to look at, and pretending
+ * otherwise by putting the camera lower would just fill the screen with the back of a seat.
+ */
+const COCKPIT_EYE = 1.46;
+
+/**
+ * Extra field of view for the cockpit, in radians.
+ *
+ * About thirteen degrees on top of whatever the profile asks for. A first-person view needs it: the
+ * chase camera gets its sense of speed from watching the kart move against the road, and inside the
+ * kart there is nothing to watch it against, so the speed has to come from the periphery instead.
+ */
+const COCKPIT_FOV_BONUS = 0.23;
+
 export class RaceCameraV5 {
   readonly camera: UniversalCamera;
 
@@ -97,6 +128,7 @@ export class RaceCameraV5 {
   private punch = 0;
   private shakeSeed = Math.random() * 1000;
   private initialised = false;
+  private view: CameraView = "CHASE";
 
   constructor(scene: Scene, private profile: CameraProfile) {
     this.camera = new UniversalCamera("race-camera-v5", new Vector3(0, 4, -10), scene);
@@ -128,6 +160,24 @@ export class RaceCameraV5 {
 
   setProfile(profile: CameraProfile): void {
     this.profile = profile;
+  }
+
+  /** Switches between the chase camera and the cockpit, and reports which one is now live. */
+  toggleView(): CameraView {
+    this.view = this.view === "CHASE" ? "COCKPIT" : "CHASE";
+    /**
+     * Re-seeded, not interpolated.
+     *
+     * The two views are eleven metres apart, so lerping between them would sweep the camera through
+     * the kart, the road and whatever is behind it over the better part of a second. A cut is the
+     * honest transition here, and it is also what every game that offers this does.
+     */
+    this.initialised = false;
+    return this.view;
+  }
+
+  getView(): CameraView {
+    return this.view;
   }
 
   getProfile(): CameraProfile {
@@ -184,6 +234,11 @@ export class RaceCameraV5 {
     const rightX = forwardZ;
     const rightZ = -forwardX;
 
+    if (this.view === "COCKPIT") {
+      this.updateCockpit(kart, forwardX, forwardZ, speedRatio, boosting, dt);
+      return;
+    }
+
     const boom = context.maxBoom !== undefined ? Math.min(this.distance, context.maxBoom) : this.distance;
     const pivotY = kart.position.y + 1.2;
     this.desired.set(
@@ -231,6 +286,76 @@ export class RaceCameraV5 {
   }
 
   /**
+   * The cockpit.
+   *
+   * Rigid where the chase camera is smoothed, and that is the point rather than a shortcut. A
+   * first-person camera that lags the vehicle it is bolted to reads as input latency — the player's
+   * own head appearing to swing a beat after their hands — so the position is written straight from
+   * the kart with no follow term. What remains smoothed is the aim, lightly, because raw yaw at a
+   * drift's snap-out is unpleasant to look through.
+   *
+   * The aim goes along the *chassis*, not along the racing line the chase camera uses. Inside the
+   * kart, a view that stays pointed at the ideal line while the kart is sideways looks broken; a view
+   * that turns with the kart is what makes a drift readable from the driver's seat.
+   */
+  private updateCockpit(
+    kart: KartState,
+    forwardX: number,
+    forwardZ: number,
+    speedRatio: number,
+    boosting: boolean,
+    dt: number,
+  ): void {
+    // Wider than the chase view, and it re-derives the FOV rather than reusing the smoothed one so
+    // the switch between views is immediate instead of easing over half a second.
+    const targetFov =
+      this.profile.baseFov + COCKPIT_FOV_BONUS + this.profile.speedFov * speedRatio + (boosting ? this.profile.boostFov : 0);
+    this.fov += (targetFov - this.fov) * (1 - Math.exp(-dt * 7));
+
+    this.desired.set(
+      kart.position.x + forwardX * 0.1,
+      kart.position.y + COCKPIT_EYE - this.dip * 0.35,
+      kart.position.z + forwardZ * 0.1,
+    );
+    // No follow term: the eye is part of the kart.
+    this.position.copyFrom(this.desired);
+
+    /**
+     * Aimed forty metres down the chassis axis.
+     *
+     * Far enough that the small lateral corrections of steering do not swing the view about, near
+     * enough that it still turns into a corner. The vertical component follows the kart's pitch
+     * proxy — its vertical speed — so cresting a rise looks over the top rather than into the sky.
+     */
+    const aimY = kart.position.y + COCKPIT_EYE + Math.max(-6, Math.min(6, kart.verticalSpeed)) * 0.55;
+    this.scratch.set(kart.position.x + forwardX * 40, aimY, kart.position.z + forwardZ * 40);
+    if (!this.initialised) {
+      this.target.copyFrom(this.scratch);
+      this.initialised = true;
+    } else {
+      Vector3.LerpToRef(this.target, this.scratch, 1 - Math.exp(-dt * 14), this.target);
+    }
+
+    this.shake = Math.max(0, this.shake - dt * 3.2);
+    this.dip = Math.max(0, this.dip - dt * 4.5);
+    this.punch = Math.max(0, this.punch - dt * 3.8);
+
+    this.camera.fov = this.fov;
+    this.camera.position.copyFrom(this.position);
+    if (this.shake > 0) {
+      // Half the chase camera's shake. At the eye the same amplitude is nauseating rather than
+      // punchy, because there is no vehicle in shot for it to read as shaking *against*.
+      const amount = this.shake * this.shake * 0.11;
+      const time = performance.now() * 0.001 + this.shakeSeed;
+      this.camera.position.x += Math.sin(time * 47.3) * amount;
+      this.camera.position.y += Math.sin(time * 61.7) * amount * 0.8;
+      this.camera.position.z += Math.cos(time * 53.3) * amount;
+    }
+    this.scratch.copyFrom(this.target);
+    this.camera.setTarget(this.scratch);
+  }
+
+  /**
    * A slow orbit for the finish presentation. Takes an explicit boom offset rather than deriving one
    * from the kart's heading, so the camera can swing around a kart that is still rolling under
    * autopilot without the shot being yanked about by its steering.
@@ -263,12 +388,13 @@ export class RaceCameraV5 {
     return this.camera;
   }
 
-  get debug(): { fov: number; distance: number; lateral: number; shake: number } {
+  get debug(): { fov: number; distance: number; lateral: number; shake: number; view: CameraView } {
     return {
       fov: Number(((this.fov * 180) / Math.PI).toFixed(1)),
       distance: Number(this.distance.toFixed(2)),
       lateral: Number(this.lateral.toFixed(2)),
       shake: Number(this.shake.toFixed(2)),
+      view: this.view,
     };
   }
 }

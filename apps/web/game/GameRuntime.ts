@@ -50,6 +50,7 @@ import {
   DesktopCameraProfile,
   MobileCameraProfile,
   RaceCameraV5,
+  type CameraView,
   type CameraContext,
 } from "@/render/RaceCameraV5";
 import { animateKartWheels, createKart, setKartPose } from "./createKart";
@@ -82,6 +83,8 @@ export type HudState = {
   timeMs: number;
   driftCharge: number;
   driftLevel: number;
+  /** Which camera is live, so the view button can label itself with what it will switch *to*. */
+  view: CameraView;
   hasItem: boolean;
   itemName: string | null;
   /** The held item's id, for the HUD's icon lookup. Null when empty-handed. */
@@ -473,6 +476,16 @@ export class GameRuntime {
     this.input.queueItem();
   }
 
+  /** Queues a hop, for the on-screen button. The keyboard raises the same pulse from its own edge. */
+  hop(): void {
+    this.input.queueHop();
+  }
+
+  /** Queues a camera-view switch, for the on-screen button. */
+  toggleView(): void {
+    this.input.queueViewToggle();
+  }
+
   respawn(): void {
     this.input.queueRespawn();
   }
@@ -729,6 +742,7 @@ export class GameRuntime {
       brake: 0,
       drift: false,
       useItem: false,
+      hop: false,
       respawn: false,
     };
   }
@@ -1076,6 +1090,23 @@ export class GameRuntime {
       this.cameraContext.floorY = this.player.sample.groundY;
       this.camera.update(kart, this.cameraContext, dt);
     }
+    // Consumed unconditionally, including during the finish presentation: a toggle that silently
+    // does nothing while the orbit camera is running would look like a broken button.
+    if (this.input.consumeViewToggle()) this.applyCameraView(this.camera.toggleView());
+  }
+
+  /**
+   * Hides the driver in the cockpit view.
+   *
+   * The camera sits just above the generated character's head, so leaving it visible fills the frame
+   * with the inside of a skull. The kart itself stays — its nose, front wheels and steering wheel are
+   * in shot, which is what stops a first-person view from feeling like a floating camera.
+   *
+   * Only the player's driver. The other karts must keep theirs, which is the whole reason this
+   * reaches for `this.player.driverVisual` rather than doing something scene-wide.
+   */
+  private applyCameraView(view: CameraView): void {
+    this.player.driverVisual?.root.setEnabled(view === "CHASE");
   }
 
   // ------------------------------------------------------------------ HUD and results
@@ -1101,6 +1132,7 @@ export class GameRuntime {
       timeMs: this.elapsedMs,
       driftCharge: kart.driftCharge,
       driftLevel: kart.driftLevel,
+      view: this.camera.getView(),
       hasItem: this.heldItem !== null,
       itemName: this.heldItem?.name ?? null,
       itemId: this.heldItem?.id ?? null,

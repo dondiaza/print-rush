@@ -222,6 +222,16 @@ export function simulateKart(
   state.velocity.x = forwardX * longitudinal + rightX * lateral;
   state.velocity.z = forwardZ * longitudinal + rightZ * lateral;
 
+  /**
+   * The hop, applied after the ground forces and before the integration.
+   *
+   * The order matters. Setting `grounded` false any earlier in this function would cost the frame its
+   * throttle, its braking and its tyre grip, so a hop would feel like a stumble — and a hop is
+   * supposed to be free. By here the ground has already done its work for this step and the kart can
+   * leave it.
+   */
+  if (input.hop && state.grounded) hop(state);
+
   // ---------------------------------------------------------------- integrate
   state.position.x += state.velocity.x * dt;
   state.position.z += state.velocity.z * dt;
@@ -285,6 +295,29 @@ export function resolveGround(state: KartState, groundY: number, dt: number): La
     return report;
   }
 
+  /**
+   * A kart moving upward is taking off, not landing.
+   *
+   * Without this, the six-centimetre contact epsilon above swallows any impulse too small to clear
+   * it in a single step. At the 120 Hz the runtime actually uses, a hop at 4.4 m/s advances 3.7 cm
+   * in its first step — so the check above sees the kart still inside the epsilon, the branch below
+   * treats it as a landing, and `verticalSpeed` is zeroed before it ever left the floor.
+   *
+   * That is not new with the hop. `driftHopImpulse` is 3.4 m/s and has been inert the whole time for
+   * exactly this reason; the drift's visible little jump comes from `hopTimer`, which is a visual
+   * channel, so the dead physics never showed up as a bug. It shows up immediately once a button is
+   * wired to the impulse and nothing happens.
+   *
+   * The condition is safe because a grounded kart's `verticalSpeed` is zeroed at the end of this
+   * function every step, so the only way to be inside the epsilon *and* rising is a deliberate
+   * impulse applied this frame.
+   */
+  if (state.verticalSpeed > 0) {
+    state.grounded = false;
+    state.airTime = 0;
+    return report;
+  }
+
   if (!state.grounded) {
     const impact = Math.max(0, -state.verticalSpeed);
     report.landed = true;
@@ -318,8 +351,39 @@ export function resolveGround(state: KartState, groundY: number, dt: number): La
   return report;
 }
 
+/**
+ * A hop.
+ *
+ * Small on its own — see `VehicleConfig.hopSpeed` for why it is deliberately too small to earn a
+ * landing boost or a trick by itself. Its value is in what it combines with: a ramp adds part of the
+ * rise still left in it, a kerb or a hazard can be skipped over, and the same button press that
+ * starts a drift hops into it, which is where the genre's feel comes from.
+ *
+ * No-ops in the air, without which a held button would be a flight control — and that guard is also
+ * what makes the shared button safe. Drift entry already lifts the kart by `driftHopImpulse` and sets
+ * `grounded` false, and `stepDrift` runs earlier in `simulateKart` than this does, so on the frame a
+ * drift starts this call finds the kart already airborne and does nothing. The drift's own hop wins;
+ * the two never stack.
+ */
+export function hop(state: KartState): void {
+  if (!state.grounded) return;
+  state.verticalSpeed = VehicleConfig.hopSpeed;
+  state.grounded = false;
+  state.airTime = 0;
+}
+
 export function launch(state: KartState, verticalSpeed: number): void {
-  state.verticalSpeed = Math.max(state.verticalSpeed, verticalSpeed);
+  /**
+   * A ramp adds part of the rise the kart brought to it.
+   *
+   * This used to be `Math.max`, which threw away a well-timed hop entirely: arrive at the lip still
+   * rising at 4 m/s and the ramp's 8.8 simply replaced it. Adding a fraction is what makes hopping
+   * into a ramp worth doing, and `Math.max(0, ...)` on the existing speed is what stops it working
+   * in reverse — landing *onto* a boost ramp carries a large negative vertical speed, and subtracting
+   * that would turn a bad landing into a bigger jump.
+   */
+  const carried = Math.max(0, state.verticalSpeed) * VehicleConfig.hopRampBonus;
+  state.verticalSpeed = Math.max(state.verticalSpeed, verticalSpeed + carried);
   state.grounded = false;
   state.airTime = 0;
 }

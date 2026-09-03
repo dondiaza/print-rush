@@ -14,6 +14,7 @@ export function sanitizeInput(value: unknown): GameInput {
     brake: clamp(candidate.brake, 0, 1),
     drift: candidate.drift === true,
     useItem: candidate.useItem === true,
+    hop: candidate.hop === true,
     respawn: candidate.respawn === true,
   };
 }

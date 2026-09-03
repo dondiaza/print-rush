@@ -6,12 +6,49 @@ Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **615 tests** y build de los cinco
+Estado del build: `npm run check` **verde** — lint, typecheck, **637 tests** y build de los cinco
 workspaces.
 
 ---
 
 ## DONE
+
+### ETAPA 23 — SALTO, OBJETOS Y CÁMARA EN PRIMERA PERSONA (2026-09-03)
+
+Razonamiento completo en `docs/GAMEPLAY.md`. Resumen:
+
+- [x] **Salto con ESPACIO.** 4,4 m/s, 0,44 m, 0,4 s de aire — deliberadamente por debajo de
+      `landingBoostMinAir` (0,45) y `trickMinAirSeconds` (0,42), así que un salto en llano **no paga
+      nada** y no hay nada que espamear. `hop.test.ts` asserta la relación entre las tres constantes,
+      no sus valores: subir `hopSpeed` lo justo convertiría el salto repetido en el camino más rápido
+      de cualquier circuito, sin error en ninguna parte
+- [x] **Más vuelo en rampas.** `launch()` suma `hopRampBonus` (0,6) de la subida que el kart trae, en
+      vez de descartarla con `Math.max`. Un salto cronometrado al labio da un tercio más de aire;
+      mal cronometrado, la rampa es solo una rampa. Emergente, sin ventana codificada
+- [x] **ESPACIO es salto, derrape y truco a la vez**, que es la convención del género y no una
+      arbitración: `drift` lee el estado mantenido, `hop` el flanco de pulsación, `armTrick` solo mira
+      el mantenido en el aire. Y no se apilan — `stepDrift` corre antes y ya pone `grounded` false,
+      así que en el fotograma de entrada al derrape el salto no hace nada
+- [x] **Fallo viejo destapado:** `resolveGround` trataba como aterrizaje cualquier cosa dentro de su
+      epsilon de 6 cm, y a 120 Hz un salto avanza 3,7 cm en el primer paso. `driftHopImpulse` (3,4)
+      llevaba **inerte desde siempre** por lo mismo; no se notaba porque el saltito visible del
+      derrape lo dibuja `hopTimer`, que es un canal visual. Corregido: un kart que sube está
+      despegando, no aterrizando
+- [x] **Vista 1ª / 3ª persona** con `V` / `C` o botón de HUD. La cabina es rígida al chasis (una
+      primera persona que va por detrás del vehículo se lee como latencia) y apunta al **eje del
+      chasis**, no a la línea de carrera — mirar la línea ideal es correcto desde detrás y hace un
+      derrape ilegible desde dentro. El cambio es un corte, no una interpolación: once metros
+- [x] `consumeViewToggle()` **fuera de `GameInput`**: la cámara de un jugador no cambia la simulación,
+      así que no viaja en el paquete de red ni se graba
+- [x] Pruebas nuevas: `game-core/tests/hop.test.ts` (12), `web/tests/camera.test.ts` (10)
+
+**Los objetos ya funcionaban** y no se han reconstruido: 5–6 filas de cajas por circuito → ruleta →
+`KeyE` o botón `ITEM` → `ItemManager.use()`, con guiado hacia delante y tiro recto atrás manteniendo
+freno. Lo que faltaba era descubrirlo antes de tener uno en la mano, así que la leyenda de la pausa
+lista ahora las seis acciones.
+
+**Sigue pendiente:** los bots no usan objetos ni saltan. El salto solo paga cronometrado contra una
+rampa, y eso necesita un modelo de la geometría próxima que `BotDriver` no construye.
 
 ### ETAPA 22 — MUNDO FUERA DE LA CARRETERA Y RESTYLING VISUAL (2026-09-03)
 

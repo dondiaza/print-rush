@@ -117,6 +117,33 @@ export const VehicleConfig = Object.freeze({
   launchBoostSeconds: 0.85,
 
   // -------------------------------------------------------------------- air
+  // ------------------------------------------------ the hop
+  /**
+   * Upward speed of a hop, in metres per second.
+   *
+   * Deliberately small, and the number is chosen against two other constants rather than by feel.
+   * At 4.4 m/s under gravity 22 the kart rises 0.44 m and is airborne for 0.4 s — which is *under*
+   * both `landingBoostMinAir` (0.45) and `trickMinAirSeconds` (0.42). That is the whole design: a
+   * bare hop on the flat earns nothing at all, so hopping down a straight is not a free boost and
+   * there is nothing to spam. It pays only when it is combined with a ramp, which is what
+   * `hopRampBonus` is for.
+   *
+   * Those three numbers are a set, so `hop.test.ts` asserts the relationship rather than the values.
+   */
+  hopSpeed: 4.4,
+  /**
+   * How much of a hop's remaining rise a ramp adds to its own launch, 0..1.
+   *
+   * This is the mechanic the player actually asked for — "hop to pick up speed on ramps" — and it is
+   * emergent rather than special-cased. `launch` adds this fraction of whatever upward speed the
+   * kart already has, so a hop timed to still be rising as it reaches the lip flies higher, stays up
+   * longer, and therefore clears `landingBoostMinAir` with room to spare and leaves time to arm a
+   * trick. Mistime it and you get the ramp's own launch and nothing more.
+   *
+   * Not 1.0: a full add would make the timing window feel like a switch. At 0.6 a good hop is worth
+   * about a third more air, which is a reward you can feel without it being the only way to play.
+   */
+  hopRampBonus: 0.6,
   gravity: 22,
   hardLandingSpeed: 11,
   landingBoostMinAir: 0.45,

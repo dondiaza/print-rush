@@ -24,6 +24,7 @@ const INITIAL_HUD: HudState = {
   speedKph: 0,
   timeMs: 0,
   driftCharge: 0,
+  view: "CHASE",
   driftLevel: 0,
   hasItem: false,
   itemName: null,
@@ -165,6 +166,26 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
   return (
     <main className="race-shell" aria-label={`Carrera de ${nickname}`}>
       <style>{`
+        /* Anchored to the frame rather than placed in the HUD's grid: the grid's cells are all
+           spoken for, and a view switch is a setting the player reaches for occasionally, not a
+           readout that competes with lap, time and speed for attention. */
+        .hud-view {
+          position: absolute; right: 14px; bottom: 96px; z-index: 3;
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          padding: 7px 11px; border: 0; border-radius: 11px; cursor: pointer;
+          background: rgba(18, 16, 26, 0.62); color: #f7f2e8;
+          backdrop-filter: blur(6px);
+          font: 800 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em;
+        }
+        .hud-view span {
+          font-size: 9px; opacity: 0.6; letter-spacing: 0.12em;
+          border: 1px solid rgba(247, 242, 232, 0.34); border-radius: 4px; padding: 1px 4px;
+        }
+        .hud-view:hover, .hud-view:focus-visible { background: rgba(255, 61, 166, 0.72); }
+        .hud-view:focus-visible { outline: 2px solid #b9ff45; outline-offset: 2px; }
+        /* On a phone the action pad owns the bottom-right corner, so the button moves up out of it
+           rather than sitting under a thumb. */
+        @media (max-width: 820px) { .hud-view { bottom: auto; top: 96px; } }
         .drift-track { position: relative; overflow: hidden; }
         .drift-track.window-open {
           box-shadow: 0 0 0 2px #b9ff45, 0 0 14px rgba(185, 255, 69, 0.7);
@@ -269,6 +290,18 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
                 )}
               </div>
             </div>
+            {/* Reachable in one tap on a phone and one key on a desktop, and labelled with what it
+                switches *to* rather than with what is live — a button that says where it will take
+                you is the one people press correctly the first time. */}
+            <button
+              type="button"
+              className="hud-view"
+              onClick={() => runtimeRef.current?.toggleView()}
+              aria-label={hud.view === "CHASE" ? "Cambiar a vista en primera persona" : "Cambiar a vista en tercera persona"}
+            >
+              <b>{hud.view === "CHASE" ? "1ª PERSONA" : "3ª PERSONA"}</b>
+              <span>V</span>
+            </button>
             <div className="hud-speed"><strong>{hud.speedKph}</strong><span>KM/H</span></div>
           </div>
           {hud.countdown !== null && <div key={hud.countdown} className="countdown">{hud.countdown}</div>}
@@ -289,7 +322,10 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             </div>
             <div className="action-pad">
               <button className="touch-button" {...hold("brake")}>FRENO</button>
+              {/* Drift and hop are the same gesture on a keyboard, but a finger cannot tap and hold
+                  one button at once, so touch gets them as two: hold DRIFT, tap SALTO. */}
               <button className="touch-button drift" {...hold("drift")}>DRIFT</button>
+              <button className="touch-button" aria-label="Salto corto; cronométralo en una rampa para volar más" onPointerDown={() => { runtimeRef.current?.hop(); navigator.vibrate?.(10); }}>SALTO</button>
               <button className="touch-button" aria-label="Usar objeto; mantén freno para lanzar atrás" onPointerDown={() => { runtimeRef.current?.useItem(); navigator.vibrate?.([12, 18, 12]); }}>ITEM</button>
               <button className="touch-button primary" {...hold("throttle")}>GAS</button>
             </div>
@@ -304,7 +340,19 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
             <button className="cta-primary" onClick={() => setPaused(false)}><span>CONTINUAR</span><b>→</b></button>
             <button className="cta-ghost" onClick={() => runtimeRef.current?.respawn()}>REAPARECER</button>
             <button className="cta-ghost" onClick={() => setShowControls((value) => !value)} aria-expanded={showControls}>CONTROLES</button>
-            {showControls && <div className="pause-controls"><span>WASD / FLECHAS</span><span>ESPACIO · DERRAPE</span><span>E · ITEM</span><span>S + E · LANZAR ATRÁS</span><span>R · REAPARECER</span></div>}
+            {showControls && (
+              <div className="pause-controls">
+                <span>WASD / FLECHAS</span>
+                {/* One key, three meanings, which is why it is written as one line: tap it on the
+                    ground and the kart hops, hold it into a corner and the hop becomes a drift. */}
+                <span>ESPACIO · SALTO (MANTÉN = DERRAPE)</span>
+                <span>ESPACIO EN RAMPA · MÁS VUELO</span>
+                <span>E · LANZAR OBJETO</span>
+                <span>S + E · LANZAR HACIA ATRÁS</span>
+                <span>V · VISTA 1ª / 3ª PERSONA</span>
+                <span>R · REAPARECER</span>
+              </div>
+            )}
             <button className="cta-ghost" onClick={onExit}>SALIR DE LA CARRERA</button>
           </div>
         </div>

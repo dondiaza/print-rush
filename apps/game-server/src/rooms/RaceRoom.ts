@@ -57,6 +57,7 @@ const idleInput = (): GameInput => ({
   steer: 0,
   throttle: 0,
   brake: 0,
+  hop: false,
   drift: false,
   useItem: false,
   respawn: false,

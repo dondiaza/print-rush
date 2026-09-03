@@ -24,6 +24,8 @@ export type Bindings = {
   lookBack: string[];
   respawn: string[];
   pause: string[];
+  /** Switches between the chase camera and the cockpit. */
+  view: string[];
 };
 
 export const DefaultBindings: Bindings = {
@@ -31,11 +33,26 @@ export const DefaultBindings: Bindings = {
   brake: ["KeyS", "ArrowDown"],
   left: ["KeyA", "ArrowLeft"],
   right: ["KeyD", "ArrowRight"],
+  /**
+   * Space is the hop *and* the drift, on purpose.
+   *
+   * They were going to collide — space was already the drift button, and the hop was asked for on
+   * space — and the resolution is the one this genre settled on long ago: it is one button whose
+   * meaning comes from what the kart is doing. Tap it on the ground and the kart hops. Hold it while
+   * steering hard enough and fast enough and the hop turns into a drift, which is *why* a drift
+   * starts with a little jump. Tap it just after leaving a ramp and it arms a trick.
+   *
+   * That works here without any arbitration because the three readers want different things from
+   * the key: `drift` is the held state, `hop` is the key-down edge, and `armTrick` only looks at the
+   * held state while airborne. Drift entry already required steering past `driftEntrySteer` and a
+   * minimum speed, so a standing tap was doing nothing before this.
+   */
   drift: ["Space", "ShiftLeft"],
   item: ["KeyE"],
   lookBack: ["KeyQ"],
   respawn: ["KeyR"],
   pause: ["Escape"],
+  view: ["KeyV", "KeyC"],
 };
 
 const PREVENT_DEFAULT = new Set([
@@ -53,6 +70,14 @@ export type TouchState = {
   throttle: boolean;
   brake: boolean;
   drift: boolean;
+  /**
+   * One-frame hop pulse from the touch layer.
+   *
+   * A pulse rather than a held flag, and unlike the others it is *cleared by the reader*: the HUD
+   * button raises it on press and `snapshot` lowers it, because a finger held on a button would
+   * otherwise hop on every touchdown. The keyboard gets the same behaviour from `event.repeat`.
+   */
+  hop?: boolean;
   autoAccelerate: boolean;
 };
 
@@ -70,6 +95,9 @@ export class InputControllerV5 {
   private respawnQueued = false;
   private lookBack = false;
   private gamepadItemHeld = false;
+  private gamepadDriftHeld = false;
+  private hopQueued = false;
+  private viewQueued = false;
   private gyroTilt = 0;
   private gyroCentre: number | null = null;
   private readonly touch: TouchState = {
@@ -86,6 +114,14 @@ export class InputControllerV5 {
     if (event.repeat) return;
     if (this.bindings.item.includes(event.code)) this.itemQueued = true;
     if (this.bindings.respawn.includes(event.code)) this.respawnQueued = true;
+    /**
+     * Hop and view are queued on the key-*down* edge, not read as held state, and the repeat guard
+     * is what makes that true. Holding a key fires `keydown` over and over at the OS repeat rate, so
+     * without this a held space would hop every few frames the moment the kart touched down, and a
+     * held V would strobe between cameras.
+     */
+    if (!event.repeat && this.bindings.drift.includes(event.code)) this.hopQueued = true;
+    if (!event.repeat && this.bindings.view.includes(event.code)) this.viewQueued = true;
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
@@ -128,6 +164,28 @@ export class InputControllerV5 {
 
   queueItem(): void {
     this.itemQueued = true;
+  }
+
+  /**
+   * Hands over a pending camera-view toggle, if there is one, and clears it.
+   *
+   * Deliberately not part of `GameInput`. That type is the networked, sanitised, replayed simulation
+   * input, and which camera a player is looking through changes nothing about the simulation — it
+   * must not be in the packet, must not be recorded, and must not have to be agreed on between
+   * clients. So it leaves the input layer by its own door.
+   */
+  consumeViewToggle(): boolean {
+    const queued = this.viewQueued;
+    this.viewQueued = false;
+    return queued;
+  }
+
+  queueHop(): void {
+    this.hopQueued = true;
+  }
+
+  queueViewToggle(): void {
+    this.viewQueued = true;
   }
 
   queueRespawn(): void {
@@ -185,6 +243,10 @@ export class InputControllerV5 {
     const padItem = pad?.buttons[2]?.pressed === true || pad?.buttons[3]?.pressed === true;
     if (padItem && !this.gamepadItemHeld) this.itemQueued = true;
     this.gamepadItemHeld = padItem;
+    // The pad's drift button hops on its own rising edge, for the same reason the keyboard does.
+    const padDrift = pad?.buttons[0]?.pressed === true || pad?.buttons[5]?.pressed === true;
+    if (padDrift && !this.gamepadDriftHeld) this.hopQueued = true;
+    this.gamepadDriftHeld = padDrift;
     this.lookBack = this.anyHeld(this.bindings.lookBack) || pad?.buttons[4]?.pressed === true;
 
     const input = sanitizeInput({
@@ -194,10 +256,13 @@ export class InputControllerV5 {
       brake: Math.max(keyBrake, padBrake, this.touch.brake ? 1 : 0),
       drift: this.anyHeld(this.bindings.drift) || this.touch.drift || pad?.buttons[0]?.pressed === true || pad?.buttons[5]?.pressed === true,
       useItem: this.itemQueued,
+      hop: this.hopQueued || this.touch.hop === true,
       respawn: this.respawnQueued,
     });
 
     this.itemQueued = false;
+    this.hopQueued = false;
+    this.touch.hop = false;
     this.respawnQueued = false;
     return input;
   }
