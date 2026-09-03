@@ -6,7 +6,7 @@ Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **585 tests** y build de los cinco
+Estado del build: `npm run check` **verde** — lint, typecheck, **615 tests** y build de los cinco
 workspaces.
 
 ---
@@ -21,7 +21,7 @@ problema de assets. Diagnóstico y razonamiento completos en `docs/ART_DIRECTION
 | Síntoma reportado | Causa localizada | Corrección |
 |---|---|---|
 | "Debo poderme salir de la carretera" | `wallLeft/wallRight` con `?? true` y ningún blueprint declarándolos: `queryWall` paraba en el borde del asfalto y `GRASS`/`SAND`/`OFFROAD` eran código muerto | Barrera medida desde el borde del arcén (16 m), arcén conducible, recuperación a 26 m |
-| "Sigue sin tener fondos completos" | No existía suelo: más allá de los muros no había geometría de ningún tipo | `render/Terrain.ts` — arcén lofteado, campo de 700 m de margen, banda sonora instanciada. Tres draw calls, en todos los niveles |
+| "Sigue sin tener fondos completos" | No existía suelo: más allá de los muros no había geometría de ningún tipo | `render/Terrain.ts` — arcén lofteado, heightfield que sigue el trazado, banda sonora instanciada |
 | "Los elementos de background salen medio invisibles" | Niebla `EXP2` con densidades hasta 0,013: **18 % de visibilidad a 100 m** contra un plano lejano de 900 | Banda remapeada a 0,00055–0,0021 conservando el haze relativo por zona |
 | "Partes donde desaparecen los elementos" | Cúpula de backdrop de radio 260 ocluyendo todo lo más lejano; y `minZ = 0.25` contra `maxZ = 900` → z-fighting a distancia en depth buffers de 16 bits | Radio 820 con horizonte a la altura de los ojos; `minZ = 0.8` |
 | "En mobile se ve mal el texturizado" | Cuatro causas: casi todo teléfono caía a `LOW` (`cores <= 4`), presupuestos de `LOW` a **cero**, anisotropía a 1, y mapas horneados apagados en `LOW` | `LOW` reservado a dispositivos que se declaran pequeños; presupuestos reducidos pero nunca cero; anisotropía 4/8; mapas horneados en todos los niveles |
@@ -40,6 +40,29 @@ Restyling de imagen, sobre el mismo diagnóstico:
 - [x] Sprites devueltos a la niebla, ahora que la niebla es haze y no cortina
 - [x] Pruebas nuevas: `game-core/tests/offroad.test.ts` (15), `web/tests/terrain.test.ts` (6),
       `web/tests/lighting.test.ts` (111) — la de niebla asserta lo que ve el jugador, no la constante
+
+**Regresión corregida el mismo día (2026-09-03).** La primera versión del campo era un plano a la
+altura **media** del circuito, y se desplegó así. Estos circuitos tienen 20 m de desnivel, de modo
+que el plano quedaba 4,48 m sobre la línea de meta del Megastore con el **61 % de la carretera
+enterrada**; y como `RaceCameraV5` pone el ojo en `kart.y + 4.7`, en los cinco circuitos **el kart
+quedaba debajo del plano y el ojo encima** (0,64 m en el Megastore). Se reportó como *"se ve en
+primera persona pero no hay una carretera definida… campo libre"*, que era una descripción exacta del
+render: una causa, tres síntomas.
+
+- [x] El campo es un heightfield que toma la altura de la carretera **más baja** cercana, no la más
+      cercana — con la nearest, el suelo bajo un puente se construye al nivel del tablero y entierra
+      la carretera de abajo: el mismo fallo, local en vez de global
+- [x] El radio de ese mínimo se **deriva** del tamaño de celda (supera su diagonal), que es lo que
+      extiende la garantía del vértice a la superficie bilineal que de verdad se dibuja
+- [x] `heightAt(x, z)` expuesto desde `Terrain`: público, vegetación, props y landmarks se apoyan en
+      el suelo y no en la altura de la carretera que miran
+- [x] Arcén de 16 → **5 m** por lado y margen visual de 700 → **300 m**. La regla nueva es que la
+      escapatoria de un lado no supere la semianchura de la carretera, medida contra el circuito más
+      estrecho (Office Chaos, 11,7 m). Eso es la otra mitad del informe: *"debe ser un circuito, no
+      campo libre"*
+- [x] `web/tests/ground.test.ts` (30) fija las invariantes contra los cinco circuitos reales y contra
+      el búfer de vértices: nunca por encima de la carretera, nunca por encima del ojo, y hundido
+      solo donde hay carretera más baja cerca
 
 **No hecho, y con motivo:** la geometría de la cámara (altura 3,5 m, brazo 8,4 m, FOV 62°) no se ha
 tocado. Bajarla y acercarla acercaría el resultado a la referencia del género, pero es un cambio de

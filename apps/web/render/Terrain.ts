@@ -35,6 +35,15 @@ export type Terrain = {
   meshes: Mesh[];
   /** The field's extent, so the backdrop can be placed beyond it rather than guessed at. */
   radius: number;
+  /**
+   * Ground height at a world position.
+   *
+   * Anything placed outside the barrier — spectators, plants, props, landmarks — has to stand on the
+   * ground rather than at the height of the nearest piece of road, or it floats above a dip and sinks
+   * into a rise. This is the same function the field's vertices were built from, so the two agree by
+   * construction rather than by coincidence.
+   */
+  heightAt: (x: number, z: number) => number;
   dispose: () => void;
 };
 
@@ -115,39 +124,71 @@ export function createTerrain(
   let maxX = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
-  let sumY = 0;
+  let minY = Infinity;
   for (const node of nodes) {
     minX = Math.min(minX, node.x);
     maxX = Math.max(maxX, node.x);
     minZ = Math.min(minZ, node.z);
     maxZ = Math.max(maxZ, node.z);
-    sumY += node.y;
+    minY = Math.min(minY, node.y);
   }
   const centreX = (minX + maxX) / 2;
   const centreZ = (minZ + maxZ) / 2;
-  /**
-   * The field sits at the circuit's mean height, not at zero.
-   *
-   * A circuit with elevation would otherwise have its ground plane slicing through the road at one
-   * end and floating above it at the other. The verge below handles the local height properly; the
-   * field only has to be plausible where it is actually seen, which is beyond the verge.
-   */
-  const baseY = sumY / Math.max(1, nodes.length) - 0.35;
   const span = Math.max(maxX - minX, maxZ - minZ) + TerrainConfig.visualMarginMetres * 2;
+  /**
+   * Grid resolution, and the height radius derived from it.
+   *
+   * These two are one decision, not two, and the derivation is what makes the ground safe. A vertex
+   * takes the lowest road height within `heightRadius`; the mesh between vertices is a bilinear
+   * patch, which is bounded by its four corners. So as long as every point in a cell is inside the
+   * radius of all four of that cell's corners — which needs the radius to exceed the cell's diagonal
+   * — the rendered surface is at or below every piece of road near it, everywhere, not just at the
+   * vertices. Writing the radius as a constant beside a separately chosen cell count is how that
+   * guarantee gets quietly broken by a later edit to the margin.
+   *
+   * The radius also wants to be as *small* as the bound allows. It is a minimum over a disc, so a
+   * larger disc means the ground sags further below the road on a gradient: at 45 m the Manga hall's
+   * climb put an eight-metre trench beside the track. At one and a half cells it is around two.
+   */
+  const cells = Math.max(24, Math.min(128, Math.round(span / 14)));
+  const heightRadius = (span / cells) * 1.5;
+  const heightAt = groundHeight(nodes, minY, heightRadius);
 
   // ------------------------------------------------------------------ field
+  /**
+   * The ground follows the circuit's elevation. It has to, and the first version of this did not.
+   *
+   * That version was a flat plane at the circuit's *mean* height, on the reasoning that the verge
+   * handled the local height and the field only had to be plausible beyond it. The reasoning was
+   * wrong by an order of magnitude: these circuits climb and fall through more than twenty metres —
+   * the Megastore runs from -3.6 m at its lowest to 15.5 m on the upper floor — so a plane at the
+   * mean sat four and a half metres *above the start line* with 61% of the road buried underneath it.
+   * With the race camera three and a half metres up, the player's eye was inside an opaque
+   * kilometre-wide sheet, looking at a flat expanse with the track hidden below. It read as an open
+   * field seen in first person, which is precisely what it was.
+   *
+   * So the field is a heightfield: a grid whose every vertex takes its height from the road nearby,
+   * and specifically from the *lowest* road nearby (see {@link groundHeight}), so it can never bury
+   * anything. It comes to some eight thousand vertices in one static mesh — cheap enough to keep
+   * identical at every quality tier, which matters, because the ground is the one thing that can
+   * never be cut.
+   */
   const field = MeshBuilder.CreateGround(
     "terrain-field",
-    {
-      width: span,
-      height: span,
-      // A few subdivisions rather than one quad: a single enormous quad interpolates its lighting
-      // across the whole circuit, which reads as a flat grey sheet under a directional light.
-      subdivisions: quality === "LOW" ? 4 : 12,
-    },
+    { width: span, height: span, subdivisions: cells },
     scene,
   );
-  field.position.set(centreX, baseY, centreZ);
+  field.position.set(centreX, 0, centreZ);
+  const positions = field.getVerticesData(VertexBuffer.PositionKind);
+  if (positions) {
+    for (let index = 0; index < positions.length; index += 3) {
+      positions[index + 1] = heightAt((positions[index] ?? 0) + centreX, (positions[index + 2] ?? 0) + centreZ);
+    }
+    field.setVerticesData(VertexBuffer.PositionKind, positions);
+    // The normals came from a flat plane, so every one of them points straight up. Without this the
+    // heightfield lights as though it were level and its slopes read as shading painted on a floor.
+    field.createNormals(false);
+  }
   /**
    * UVs rewritten in metres.
    *
@@ -214,6 +255,7 @@ export function createTerrain(
   return {
     meshes,
     radius: span / 2,
+    heightAt,
     dispose: () => {
       for (const mesh of meshes) mesh.dispose();
     },
@@ -222,6 +264,85 @@ export function createTerrain(
 
 /** Metres of verge covered by one repeat of its texture along the track. */
 const VERGE_TILE_LENGTH = 14;
+
+/**
+ * A ground-height function derived from the centreline.
+ *
+ * Two properties matter, and the second is the one that is easy to miss.
+ *
+ * It has to **follow the road**, because a circuit that climbs twenty metres cannot have a flat
+ * ground plane. That was the bug this replaced.
+ *
+ * And it has to take the height of the *lowest* road nearby, not the nearest one. These circuits
+ * cross over themselves — the Megastore jumps over its own shop floor, the warehouse runs gantries
+ * above its aisles. Take the nearest node's height and the ground under a bridge gets built at the
+ * height of the bridge deck, burying the road that passes beneath: the same failure as before, local
+ * instead of global. The minimum guarantees the ground is at or below every piece of road near it,
+ * which is the invariant that actually matters.
+ *
+ * Past `radius` from any road the height eases toward the circuit's own floor, so the far ground is
+ * a plain that the circuit sits on rather than a cliff a fixed distance from the track.
+ *
+ * `radius` is the caller's, and it is derived from the mesh's cell size rather than chosen here —
+ * see the note at the call site for why the two cannot be picked independently.
+ *
+ * The lookup is a uniform grid rather than a scan: eight thousand vertices against a thousand nodes
+ * is eight million distance tests done the naive way, and a few dozen done this way.
+ */
+function groundHeight(
+  nodes: readonly TrackNode[],
+  minY: number,
+  radius: number,
+): (x: number, z: number) => number {
+  const buckets = new Map<string, TrackNode[]>();
+  const cellKey = (cx: number, cz: number) => cx + ":" + cz;
+  for (const node of nodes) {
+    const key = cellKey(Math.floor(node.x / radius), Math.floor(node.z / radius));
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(node);
+    else buckets.set(key, [node]);
+  }
+
+  const floor = minY - 2;
+  return (x: number, z: number): number => {
+    const cx = Math.floor(x / radius);
+    const cz = Math.floor(z / radius);
+    let lowest = Infinity;
+    let nearest = Infinity;
+    let nearestY = floor;
+    // The cell size is the search radius, so the 3x3 block around a point covers everything within
+    // it. Searching wider would only turn up nodes that are already too far away to count.
+    for (let ox = -1; ox <= 1; ox += 1) {
+      for (let oz = -1; oz <= 1; oz += 1) {
+        const bucket = buckets.get(cellKey(cx + ox, cz + oz));
+        if (!bucket) continue;
+        for (const node of bucket) {
+          const distance = Math.hypot(node.x - x, node.z - z);
+          if (distance < nearest) {
+            nearest = distance;
+            nearestY = node.y;
+          }
+          if (distance <= radius) lowest = Math.min(lowest, node.y);
+        }
+      }
+    }
+
+    // Half a metre below the road, so the verge's outer edge steps down onto the field instead of
+    // fighting it for the same pixels. The barrier stands in front of that step.
+    if (lowest < Infinity) return lowest - 0.5;
+    /**
+     * Out of range of the road: ease from the nearest road's height down to the circuit's floor.
+     *
+     * A hard cut to the floor would put a cliff a fixed distance from the track the whole way round
+     * the lap. Easing over a couple of hundred metres makes it a slope instead, and by the time it
+     * reaches the floor the barrier and the dressing are long out of the way.
+     */
+    if (nearest === Infinity) return floor;
+    const t = Math.min(1, (nearest - radius) / 220);
+    const eased = t * t * (3 - 2 * t);
+    return (nearestY - 0.5) * (1 - eased) + floor * eased;
+  };
+}
 
 /** The mean road width, used to square up the verge's texture across the track. */
 function meanWidth(nodes: readonly TrackNode[]): number {

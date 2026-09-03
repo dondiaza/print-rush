@@ -427,14 +427,75 @@ incluido el más bajo:
 
 | Elemento | Qué es | Por qué |
 |---|---|---|
-| **Arcén** (`verge`) | Banda conducible de 16 m a cada lado, con la misma superficie lofteada que la carretera y 2 cm por debajo | Hereda el alabeo y la elevación del eje exactamente. Una tira plana aparte se separaría en cada rasante. A la misma altura se leería como un cambio de pintura; mucho más baja, como un bordillo del que el kart se cae |
-| **Campo** (`field`) | Un plano que cubre el circuito y 700 m más allá | El horizonte pasa a ser suelo contra cielo, no geometría que se termina |
+| **Arcén** (`verge`) | Banda conducible de 5 m a cada lado, con la misma superficie lofteada que la carretera y 2 cm por debajo | Hereda el alabeo y la elevación del eje exactamente. Una tira plana aparte se separaría en cada rasante. A la misma altura se leería como un cambio de pintura; mucho más baja, como un bordillo del que el kart se cae |
+| **Campo** (`field`) | Un **heightfield** que sigue la elevación del trazado y cubre el circuito y 300 m más allá | El horizonte pasa a ser suelo contra cielo, no geometría que se termina. Por qué no es un plano: §13.1.1 |
 | **Banda sonora** (`rumble`) | Bloques alternos instanciados en el borde del asfalto | Es lo que comunica el límite a velocidad. Un cambio de color no lo hace; una vibración que se ve, sí — el ojo lee la frecuencia del parpadeo como una tasa de avance |
 
-`TerrainConfig` fija los tres números: `vergeMetres: 16`, `recoveryMetres: 26`,
-`visualMarginMetres: 700`. El último se deriva del backdrop, no del gusto: la cúpula está a 820 m de
-la cámara, así que 700 deja como máximo 120 m de hueco entre donde acaba el suelo y donde empieza el
-dibujo — un cuarto de grado de vista desde una cámara a tres metros y medio.
+`TerrainConfig` fija los tres números: `vergeMetres: 5`, `recoveryMetres: 12`,
+`visualMarginMetres: 300`.
+
+Los dos primeros son proporción de circuito, no gusto: los circuitos tienen carreteras de 11,7 a
+14 m, y la regla es que la escapatoria de un lado no supere la **semianchura** de la carretera —
+medida contra el circuito más estrecho (Office Chaos, 11,7 m), no contra el más ancho. Cinco metros
+son dos anchos y medio de kart: suficiente para irse largo y volver, insuficiente para dejar de ser
+una pista.
+
+El tercero se deriva de la resolución del heightfield y del backdrop. La cúpula está a 820 m de la
+cámara, y el borde del suelo tiene que quedar a menos de un grado del horizonte visto desde el ojo
+del piloto (5,1 m sobre la pista) y **dentro** de los 820 m, porque la cúpula es relativa a la cámara
+y un suelo que la atravesara lo haría de forma distinta cada fotograma. Con 300 el radio queda en
+676 m: 0,43° bajo el horizonte. `tests/terrain.test.ts` asserta esas dos cotas, no el número.
+
+#### 13.1.1 El plano plano: la regresión que se desplegó
+
+La primera versión de este campo **era** un plano, colocado a la altura **media** del circuito, con
+este razonamiento escrito al lado: *"el arcén se encarga de la altura local; el campo solo tiene que
+ser plausible donde de verdad se ve, que es más allá del arcén"*. Todo en esa frase es cierto salvo
+la conclusión, porque estos circuitos no son planos.
+
+| Circuito | minY | maxY | Plano (media − 0,35) | Kart en meta | Ojo de cámara |
+|---|---|---|---|---|---|
+| T-Shirt Megastore | −3,6 | 15,5 | **4,48** | 0,42 → **debajo** | 5,12 → **encima** |
+| Warehouse Express | −4,0 | 14,0 | 1,41 | 0,42 → debajo | 5,12 → encima |
+| Ink & Print Factory | −4,0 | 12,0 | 0,88 | 0,42 → debajo | 5,12 → encima |
+| Office Chaos | 0,0 | 10,0 | 3,84 | 0,42 → debajo | 5,12 → encima |
+| Manga Mega Con | −5,0 | 18,0 | 2,55 | 0,42 → debajo | 5,12 → encima |
+
+En el Megastore el plano quedaba **4,48 m sobre la línea de meta**, con el **61 % de la carretera
+enterrada** debajo de una lámina opaca de más de un kilómetro. Y el reparto de alturas es lo que
+convierte eso en el síntoma exacto que se reportó: `RaceCameraV5` pone el ojo en
+`kart.y + 1.2 + 3.5`, y el kart rueda 0,42 m sobre el asfalto, así que **en los cinco circuitos el
+kart quedaba debajo del plano y el ojo encima** — a 0,64 m en el Megastore. Un punto de vista rozando
+una superficie lisa, sin vehículo propio y sin pista a la vista.
+
+Se reportó como *"se ve en primera persona pero no hay una carretera definida… campo libre"*. Era una
+descripción exacta del render: una sola causa explicando las tres cosas a la vez.
+
+El campo es ahora un heightfield cuyo vértice toma la altura de la carretera **más baja** que tenga
+cerca, no de la más cercana. Esa distinción es la segunda mitad del arreglo: estos circuitos se
+cruzan sobre sí mismos —el Megastore salta sobre su propia planta, la nave corre pasarelas sobre los
+pasillos—, y con la más cercana el suelo bajo un puente se construiría a la altura del tablero,
+enterrando la carretera que pasa por debajo. El mismo fallo otra vez, local en lugar de global. El
+mínimo garantiza que el suelo está en o por debajo de toda carretera próxima.
+
+El radio de ese mínimo **se deriva del tamaño de celda de la malla**, no se elige aparte, y eso es lo
+que hace que la garantía valga para lo que se dibuja y no solo para los vértices: la superficie entre
+vértices es un parche bilineal, acotado por sus cuatro esquinas, así que basta con que el radio supere
+la diagonal de la celda para que toda la celda quede bajo cualquier carretera cercana. Escribir el
+radio como constante al lado de un número de celdas elegido por separado es exactamente cómo esa
+garantía se rompe en la siguiente edición del margen.
+
+Y el radio quiere ser lo más **pequeño** que la cota permita, porque es un mínimo sobre un disco: en
+pendiente, la carretera más baja del disco está más abajo de la cuesta, y el suelo se hunde. A 45 m
+la subida de Manga abría una zanja de **ocho metros** junto a la pista. A una celda y media son unos
+dos.
+
+`tests/ground.test.ts` fija las dos invariantes contra los cinco circuitos reales y contra el búfer
+de vértices, no contra la función: el suelo nunca por encima de la carretera, nunca por encima del
+ojo de la cámara, y hundido solo donde hay carretera genuinamente más baja cerca. La tercera tardó
+dos intentos en enunciarse bien — *"el hundimiento es pequeño"* falla honestamente en el cruce de
+Manga, donde el suelo **debe** bajar al nivel inferior; lo correcto es *"el hundimiento está
+explicado por carretera más baja cercana"*, que sigue fallando ante una zanja de pendiente.
 
 ### 13.2 El corredor era un valor por defecto
 
@@ -461,6 +522,12 @@ la vegetación, los props a 2,6–7,6 m y los landmarks a 9 m quedaban de pie en
 collider, para que un kart los atravesara. Todos ellos se miden ahora desde la barrera. La
 escapatoria queda vacía, que es además como son los circuitos reales: run-off plano y limpio, y todo
 lo que tiene silueta detrás de la barrera.
+
+Y una segunda consecuencia, del heightfield: **fuera de la barrera el suelo tiene su propia
+elevación**, así que anclar la decoración a `node.y` la deja flotando sobre una vaguada y hundida en
+un talud. `Terrain` expone `heightAt(x, z)` —la misma función con la que se construyeron los
+vértices, así que concuerdan por construcción y no por coincidencia— y público, vegetación, props y
+landmarks se apoyan en ella.
 
 ### 13.3 El alabeo era una rampa infinita
 

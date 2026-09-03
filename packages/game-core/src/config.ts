@@ -184,30 +184,39 @@ export const TerrainConfig = Object.freeze({
   /**
    * How far past the road edge the drivable verge extends, in metres.
    *
-   * Wide enough to cut a corner or run wide and recover, narrow enough that the racing line still
-   * matters. Beyond it the kart is recovered rather than allowed to wander into the backdrop.
+   * Wide enough to put two wheels off, or to run fully off for a moment and come back; narrow enough
+   * that the barrier still reads as the edge of a *course*.
+   *
+   * Sixteen was the first value here and it was far too much: the circuits' roads are 11.7 to 14 m
+   * wide, so sixteen metres a side put more than twice as much run-off as tarmac on the track. That
+   * is not a circuit with room for a mistake, it is open ground with a strip of road across it — the
+   * "campo libre" half of the report. The rule this now satisfies is that a side's run-off must not
+   * exceed the road's own half-width — and that is measured against the *narrowest* circuit, Office
+   * Chaos at 11.7 m mean width, not against the widest. Five metres is two and a half kart widths:
+   * enough to run wide and come back, not enough to stop being a track.
    */
-  vergeMetres: 16,
+  vergeMetres: 5,
   /**
    * Where recovery triggers, past the road edge.
    *
    * Deliberately larger than the verge so the boundary is felt as a consequence rather than as a
    * wall a metre outside the tarmac: you get a moment of being genuinely lost before being helped.
    */
-  recoveryMetres: 26,
+  recoveryMetres: 12,
   /**
    * How far the terrain mesh reaches past the widest part of the circuit.
    *
-   * A *visual* number, not a physical one: it decides how much ground there is to look at, and it is
-   * set from the backdrop shell rather than from taste. That shell sits 820 m from the camera, so a
-   * margin of 700 leaves at most 120 m of gap between where the ground stops and where the backdrop
-   * starts — which, from a camera three metres up, is a quarter of a degree of view. At the 240 this
-   * started as, the gap was 580 m and the ground visibly ended before the horizon did.
+   * A *visual* number, not a physical one: it decides how much ground there is to look at.
    *
-   * It costs nothing worth counting: the field is one plane with a dozen subdivisions, and the pixels
-   * it covers are the same pixels either way. Only its extent changes, not its fill.
+   * It was briefly 700, chosen to close the gap to the backdrop shell at 820 m. That was the wrong
+   * variable to solve it with. The field is a heightfield now, so its extent buys resolution as well
+   * as reach — spreading the same grid over a kilometre and a half makes its cells too coarse to
+   * follow the road at all — and past a couple of hundred metres from the track the height has
+   * already eased flat, so the extra reach was adding nothing but stretched triangles. Three hundred
+   * puts the ground edge roughly one degree below the horizon from the race camera, which the
+   * backdrop's own lower band covers.
    */
-  visualMarginMetres: 700,
+  visualMarginMetres: 300,
 });
 
 export const GameplayConfig = Object.freeze({

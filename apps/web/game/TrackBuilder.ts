@@ -413,10 +413,13 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
          */
         const distance = half + TerrainConfig.vergeMetres + 2.6 + random() * 5;
         const instance = source.mesh.createInstance(`prop-${index}-${side}`);
+        const propX = node.x + frame.nx * distance * side;
+        const propZ = node.z + frame.nz * distance * side;
         instance.position.set(
-          node.x + frame.nx * distance * side,
-          node.y + (spec.kind === "SCREEN" || spec.kind === "SIGN" ? 2.6 + random() * 1.6 : 0),
-          node.z + frame.nz * distance * side,
+          propX,
+          // On the ground outside the barrier, plus a mount height for the things that hang.
+          terrain.heightAt(propX, propZ) + (spec.kind === "SCREEN" || spec.kind === "SIGN" ? 2.6 + random() * 1.6 : 0),
+          propZ,
         );
         instance.rotation.y = frame.heading + (side > 0 ? Math.PI : 0) + (random() - 0.5) * 0.3;
         // Seeded scale and tint variation: two identical copies of a prop in one frame is the
@@ -506,7 +509,12 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const half = node.width / 2 + TerrainConfig.vergeMetres;
       const distance = half + Math.abs(offset);
       const side = Math.sign(offset) || 1;
-      return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
+      const x = node.x + frame.nx * side * distance;
+      const z = node.z + frame.nz * side * distance;
+      // Standing on the ground, not at the height of the road they are watching. Outside the barrier
+      // the terrain has its own elevation, so anchoring to `node.y` floats a whole grandstand above
+      // a dip and sinks it into a rise.
+      return new Vector3(x, terrain.heightAt(x, z), z);
     },
   );
   // Plants and hanging stock, on the same sampler as the crowd.
@@ -525,7 +533,10 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const half = node.width / 2 + TerrainConfig.vergeMetres;
       const side = Math.sign(offset) || 1;
       const distance = half + Math.abs(offset);
-      return new Vector3(node.x + frame.nx * side * distance, node.y, node.z + frame.nz * side * distance);
+      const x = node.x + frame.nx * side * distance;
+      const z = node.z + frame.nz * side * distance;
+      // On the ground, as the crowd is.
+      return new Vector3(x, terrain.heightAt(x, z), z);
     },
   );
   void nodeAtFraction;
@@ -722,7 +733,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       // worst thing to leave standing in the middle of the run-off.
       const offset = node.width * 0.5 + TerrainConfig.vergeMetres + 9;
       const holder = new TransformNode(`landmark-${feature.label}`, scene);
-      holder.position.set(node.x + frame.nx * offset * feature.side, node.y, node.z + frame.nz * offset * feature.side);
+      const landmarkX = node.x + frame.nx * offset * feature.side;
+      const landmarkZ = node.z + frame.nz * offset * feature.side;
+      holder.position.set(landmarkX, terrain.heightAt(landmarkX, landmarkZ), landmarkZ);
       /**
        * A landmark is a hero asset with its own silhouette, chosen from the theme's set and turned to
        * face the track. V4 used the same 7 x 13 x 7 box with a glowing band for every landmark on

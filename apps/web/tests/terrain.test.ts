@@ -50,13 +50,25 @@ const build = (quality: string) =>
   createTerrain(scene, circuit.definition.nodes, circuit.blueprint.theme, quality, new FlatMaterials(scene));
 
 describe("extent", () => {
-  it("reaches past the circuit far enough to meet the backdrop", () => {
+  it("puts its edge at the horizon and inside the backdrop", () => {
     const terrain = build("HIGH");
-    // The backdrop shell sits 820 m from the camera. Anything less than that here leaves a band of
-    // nothing between where the ground stops and where the picture starts, which is the "incomplete
-    // background" report in its most literal form.
+    /**
+     * Two bounds, one from each side, and both are geometric rather than chosen.
+     *
+     * **Far enough** that the ground's edge reads as the horizon: from the race camera's eye, 5.1 m
+     * above the road, the edge must sit within a degree of level. Closer than that and the player
+     * sees the ground visibly stop, which is the "incomplete background" report in its most literal
+     * form.
+     *
+     * **Nearer than 820 m**, which is where the backdrop shell stands. The shell is camera-relative,
+     * so a ground plane reaching past it would push through the picture — and because the shell
+     * follows the camera, it would do so differently every frame.
+     */
+    const EYE = 5.12;
+    const edgeBelowHorizon = (Math.atan(EYE / terrain.radius) * 180) / Math.PI;
+    expect(edgeBelowHorizon).toBeLessThan(1);
+    expect(terrain.radius).toBeLessThan(820);
     expect(terrain.radius).toBeGreaterThanOrEqual(TerrainConfig.visualMarginMetres);
-    expect(terrain.radius).toBeGreaterThan(700);
     terrain.dispose();
   });
 
