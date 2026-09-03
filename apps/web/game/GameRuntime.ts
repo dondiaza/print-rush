@@ -126,6 +126,25 @@ export type HudState = {
   maxSpeedKph: number;
 };
 
+/** One row of the final classification. */
+export type Standing = {
+  position: number;
+  name: string;
+  /** True for the row that is the player, so the table can pick it out. */
+  isPlayer: boolean;
+  /**
+   * Total race time, or null for a kart still out on the circuit.
+   *
+   * Null rather than an estimate: a rival who has not crossed the line has no time, and inventing one
+   * from their progress would put a number in the table that never happened. The gap column carries
+   * the information instead.
+   */
+  totalTimeMs: number | null;
+  bestLapMs: number | null;
+  /** Metres behind the winner at the moment the player finished. Zero for the leader. */
+  gapMetres: number;
+};
+
 export type RaceResult = {
   position: number;
   totalTimeMs: number;
@@ -134,6 +153,15 @@ export type RaceResult = {
   /** Drift windows hit perfectly across the race. The skill statistic. */
   perfectDrifts: number;
   maxSpeedKph: number;
+  /**
+   * The full classification, leader first.
+   *
+   * The results screen showed the player's time, best lap and boost count and nothing about the
+   * seven karts they had just raced — so finishing second and finishing seventh looked identical
+   * apart from one numeral. A race without a classification is not a result, it is a stopwatch
+   * reading.
+   */
+  standings: Standing[];
 };
 
 type GameRuntimeOptions = {
@@ -141,6 +169,8 @@ type GameRuntimeOptions = {
   muted: boolean;
   onHud: (state: HudState) => void;
   onFinish: (result: RaceResult) => void;
+  /** The player's name, for the classification table. */
+  nickname: string;
   character: CharacterDefinition;
   /**
    * The player's styled face, as a URL, or null for the geometry's own colours.
@@ -245,6 +275,36 @@ type Racer = {
   progress: RaceProgress;
   driver: BotDriver | null;
 };
+
+/**
+ * Rival names, one per grid slot.
+ *
+ * Named rather than "BOT 3", because a classification table full of "BOT" is a debug view. They are
+ * print-shop words on purpose — the circuits are a screen-printing universe and the field should
+ * sound like it belongs there rather than like a generic racing roster.
+ *
+ * Indexed by slot, so a given seat always has the same driver: the kart, the personality and the name
+ * all come from the same index, and a race replays identically.
+ */
+const BOT_NAMES = [
+  "SERIGRAFÍA",
+  "TINTA PLASTISOL",
+  "RASQUETA",
+  "PANTALLA 43T",
+  "SECADORA",
+  "REGISTRO CMYK",
+  "BASTIDOR",
+  "EMULSIÓN",
+  "PULPO 8/6",
+  "VINILO TEXTIL",
+  "TRANSFER DTF",
+] as const;
+
+/** The driver in a given slot. `bot-0` is the first opponent, so the id carries the index. */
+function botName(id: string): string {
+  const slot = Number.parseInt(id.replace("bot-", ""), 10);
+  return BOT_NAMES[Number.isNaN(slot) ? 0 : slot % BOT_NAMES.length]!;
+}
 
 /**
  * Rival liveries, one entry per grid slot.
@@ -526,11 +586,17 @@ export class GameRuntime {
     this.engine.runRenderLoop(run);
   }
 
-  setTouchControl(control: "left" | "right" | "throttle" | "brake" | "drift", active: boolean): void {
-    // Kept for the existing HUD. The analogue path is `setTouchState`.
-    if (control === "left") this.input.setTouch({ stickX: active ? -1 : 0 });
-    else if (control === "right") this.input.setTouch({ stickX: active ? 1 : 0 });
-    else this.input.setTouch({ [control]: active } as Partial<TouchState>);
+  /**
+   * A held on-screen button: throttle, brake or drift.
+   *
+   * Steering is deliberately *not* in this list any more. It used to be, as `"left" | "right"`
+   * setting `stickX` to exactly ±1, and that was the only writer of an axis the input layer has
+   * always read as continuous — so a phone player had full lock or nothing. The stick writes through
+   * `setTouchState` now, and leaving a second path in that could still slam the axis to ±1 would be
+   * two steering systems where one will do.
+   */
+  setTouchControl(control: "throttle" | "brake" | "drift", active: boolean): void {
+    this.input.setTouch({ [control]: active } as Partial<TouchState>);
   }
 
   setTouchState(patch: Partial<TouchState>): void {
@@ -1289,6 +1355,38 @@ export class GameRuntime {
     return this.scratch.set(kart.position.x, kart.position.y, kart.position.z).clone();
   }
 
+  /**
+   * The final classification, leader first.
+   *
+   * Ordered by `rankPlayers`, which is the same lap/checkpoint/progress ranking the live position
+   * uses — so the table cannot disagree with the number that was on the HUD a second earlier. That
+   * is the whole reason it goes through `game-core` rather than sorting locally on distance.
+   *
+   * The gap is in metres rather than seconds, and that is deliberate for a race that ends the moment
+   * the *player* crosses the line: a rival two corners back has no finish time to subtract, and a
+   * time gap extrapolated from their speed would be a guess presented as a measurement. Metres along
+   * the centreline is something that is actually known.
+   */
+  private classification(): Standing[] {
+    const ranked = rankPlayers(this.racers.map((racer) => ({ racer, progress: racer.progress })));
+    const lapLength = this.track.baked.definition.lengthMeters;
+    const leader = ranked[0] ? this.totalProgress(ranked[0].racer) : 0;
+
+    return ranked.map((entry, index) => {
+      const { racer } = entry;
+      const isPlayer = racer === this.player;
+      const finished = racer.progress.finishedAt !== null || isPlayer;
+      return {
+        position: index + 1,
+        name: isPlayer ? this.options.nickname : botName(racer.id),
+        isPlayer,
+        totalTimeMs: finished ? Math.round(this.elapsedMs) : null,
+        bestLapMs: racer.progress.bestLapMs === null ? null : Math.round(racer.progress.bestLapMs),
+        gapMetres: Math.max(0, Math.round((leader - this.totalProgress(racer)) * lapLength)),
+      };
+    });
+  }
+
   private finishRace(): void {
     if (this.finished) return;
     this.finished = true;
@@ -1303,6 +1401,7 @@ export class GameRuntime {
       boostsUsed: this.boostsUsed,
       perfectDrifts: this.perfectDrifts,
       maxSpeedKph: Math.round(this.maxSpeedReached * 3.6),
+      standings: this.classification(),
     };
     this.banner = {
       text: position === 1 ? "PHOTO FINISH / P1" : `FINISH / P${position}`,

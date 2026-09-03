@@ -244,8 +244,30 @@ export function PrintRushApp() {
               <div className="results__stats">
                 <div><span>TIEMPO</span><strong>{formatTime(result.totalTimeMs)}</strong></div>
                 <div><span>MEJOR VUELTA</span><strong>{formatTime(result.bestLapMs)}</strong></div>
-                <div><span>BOOSTS</span><strong>{result.boostsUsed}</strong></div>
+                <div><span>DERRAPES PERFECTOS</span><strong>{result.perfectDrifts}</strong></div>
+                <div><span>PUNTA</span><strong>{result.maxSpeedKph} <i>KM/H</i></strong></div>
               </div>
+
+              {/* The classification. Without it, finishing second and finishing seventh looked
+                  identical apart from one numeral — the screen reported a stopwatch reading rather
+                  than a result. */}
+              <table className="standings">
+                <thead>
+                  <tr><th scope="col">POS</th><th scope="col">PILOTO</th><th scope="col">TIEMPO</th><th scope="col">MEJOR</th></tr>
+                </thead>
+                <tbody>
+                  {result.standings.map((row) => (
+                    <tr key={row.position} className={row.isPlayer ? "is-player" : ""}>
+                      <td>{row.position}</td>
+                      <td>{row.name.toUpperCase()}{row.isPlayer && <i> · TÚ</i>}</td>
+                      {/* A rival still out on the circuit has no finish time, so the gap is shown
+                          instead of a number that never happened. */}
+                      <td>{row.totalTimeMs === null ? `+${row.gapMetres} M` : formatTime(row.totalTimeMs)}</td>
+                      <td>{row.bestLapMs === null ? "—" : formatTime(row.bestLapMs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               <footer className="sheet__foot sheet__foot--split">
                 <Button variant="primary" size="lg" onClick={() => setScreen("briefing")} trailing="↻">REVANCHA</Button>
                 <Button variant="secondary" onClick={() => setScreen("tracks")}>OTRO CIRCUITO</Button>

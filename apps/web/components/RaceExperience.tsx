@@ -6,6 +6,7 @@ import { GameRuntime, type HudState, type LoadProgress, type RaceResult } from "
 import { resolveRaceCharacter } from "@/characters/race";
 import { loadActiveTrack } from "@/factory/TrackFactory";
 import { TrackMap, type TrackMarker } from "./TrackMap";
+import { TouchStick } from "./TouchStick";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
 import { Icon, iconForItem } from "@/ui/IconAtlas";
 
@@ -161,6 +162,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         onHud,
         onFinish,
         onProgress,
+        nickname,
         character: driver.definition,
         faceTextureUrl: driver.faceTextureUrl,
         kartDefinition: driver.kart,
@@ -181,7 +183,10 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       runtimeRef.current?.dispose();
       runtimeRef.current = null;
     };
-  }, [laps, muted, onFinish]);
+    // `nickname` is in the list because it is a genuine input to the runtime — it names the player's
+    // row in the classification. It cannot change while this screen is mounted (it is a setting, and
+    // settings live on the menu), so listing it costs nothing and keeps the dependency honest.
+  }, [laps, muted, nickname, onFinish]);
 
   useEffect(() => {
     runtimeRef.current?.setPaused(paused);
@@ -204,7 +209,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
     };
   }, []);
 
-  const hold = useCallback((control: "left" | "right" | "throttle" | "brake" | "drift") => ({
+  const hold = useCallback((control: "throttle" | "brake" | "drift") => ({
     onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       runtimeRef.current?.setTouchControl(control, true);
@@ -375,8 +380,10 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
 
           <div className="mobile-controls" aria-label="Controles táctiles">
             <div className="steer-pad">
-              <button className="touch-button" {...hold("left")} aria-label="Girar a la izquierda">←</button>
-              <button className="touch-button" {...hold("right")} aria-label="Girar a la derecha">→</button>
+              {/* An analogue stick, not two arrows. `stickX` has been a continuous −1…1 axis since V5
+                  and the only thing writing to it set exactly ±1, so a phone player had full lock or
+                  nothing — no way to hold a long corner at a third of the wheel. */}
+              <TouchStick onChange={(value) => runtimeRef.current?.setTouchState({ stickX: value })} />
               <button className={`touch-button ${autoAccelerate ? "primary" : ""}`} onClick={() => setAutoAccelerate((value) => !value)} aria-pressed={autoAccelerate}>AUTO</button>
             </div>
             <div className="action-pad">
