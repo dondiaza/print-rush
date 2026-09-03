@@ -266,9 +266,15 @@ export class LightingRig {
 
   /** Attaches the pipelines to a camera created after the rig. */
   attachCamera(camera: Camera): void {
-    this.scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline("rig-pipeline", camera);
+    // Already attached at construction when the camera existed first; attaching twice makes Babylon
+    // re-add every post process and log "trying to reuse a post process not defined as reusable".
+    if (!this.pipeline.cameras.includes(camera)) {
+      this.scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline("rig-pipeline", camera);
+    }
     if (this.ssao) {
-      this.scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline("rig-ssao", camera);
+      if (!this.ssao.cameras.includes(camera)) {
+        this.scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline("rig-ssao", camera);
+      }
     } else if (this.quality === "HIGH" || this.quality === "ULTRA") {
       this.enableAmbientOcclusion(camera);
     }
@@ -387,12 +393,19 @@ export const ThemeLightingZones: Record<string, LightingZone[]> = {
     { from: 0.62, name: "Picking", keyColor: "#ffe298", keyIntensity: 2.58, fillColor: "#c38a4d", fillIntensity: 0.81, groundColor: "#876336", fogColor: "#b18452", fogDensity: 0.00099, exposure: 1.08, environment: 0.81 },
     { from: 0.84, name: "Expedición", keyColor: "#e6f4ff", keyIntensity: 3.36, fillColor: "#a4bcd4", fillIntensity: 0.93, groundColor: "#6f7682", fogColor: "#abc4dd", fogDensity: 0.00061, exposure: 1.21, environment: 1.0 },
   ],
+  /**
+   * The print works: industrial neutral with the process colours as accents, as the brief asks. The
+   * first table was violet from end to end — key, fill, ground and fog all in one hue — which made
+   * the whole lap one colour and left the CMYK nothing to stand against. Now the design and control
+   * ends are clean cool-white workshop light, the screen hall goes bluer and dimmer, the ink hall
+   * alone leans magenta-violet, and the dryer is the one hot zone. Five different rooms.
+   */
   PRINT_FACTORY: [
-    { from: 0, name: "Diseño", keyColor: "#e7ebff", keyIntensity: 2.69, fillColor: "#979ec5", fillIntensity: 0.83, groundColor: "#6d6083", fogColor: "#7777ad", fogDensity: 0.00099, exposure: 1.11, environment: 0.85 },
-    { from: 0.2, name: "Pantallas", keyColor: "#d6dfff", keyIntensity: 2.46, fillColor: "#8d76c8", fillIntensity: 0.78, groundColor: "#6d6083", fogColor: "#6c54ad", fogDensity: 0.00127, exposure: 1.06, environment: 0.78 },
-    { from: 0.42, name: "Tinta", keyColor: "#ffccf1", keyIntensity: 2.24, fillColor: "#8b4eff", fillIntensity: 0.93, groundColor: "#5c3188", fogColor: "#7e41ad", fogDensity: 0.00155, exposure: 1.04, environment: 0.75 },
-    { from: 0.62, name: "Secado", keyColor: "#ff9946", keyIntensity: 2.91, fillColor: "#ff651a", fillIntensity: 0.89, groundColor: "#8b4620", fogColor: "#b2490d", fogDensity: 0.0021, exposure: 1.04, environment: 0.65 },
-    { from: 0.82, name: "Control", keyColor: "#def0ff", keyIntensity: 2.8, fillColor: "#95b0cd", fillIntensity: 0.85, groundColor: "#626d83", fogColor: "#8397ad", fogDensity: 0.00085, exposure: 1.14, environment: 0.91 },
+    { from: 0, name: "Diseño", keyColor: "#fff3e2", keyIntensity: 2.95, fillColor: "#a4adc2", fillIntensity: 0.9, groundColor: "#6e6a78", fogColor: "#8f90aa", fogDensity: 0.00088, exposure: 1.14, environment: 0.92 },
+    { from: 0.2, name: "Pantallas", keyColor: "#e4eeff", keyIntensity: 2.6, fillColor: "#8e93b4", fillIntensity: 0.82, groundColor: "#666277", fogColor: "#7c7fa4", fogDensity: 0.0012, exposure: 1.08, environment: 0.8 },
+    { from: 0.42, name: "Tinta", keyColor: "#ffe4f4", keyIntensity: 2.45, fillColor: "#9d82d6", fillIntensity: 0.9, groundColor: "#67588a", fogColor: "#8a70b2", fogDensity: 0.0014, exposure: 1.06, environment: 0.78 },
+    { from: 0.62, name: "Secado", keyColor: "#ffb36a", keyIntensity: 2.9, fillColor: "#ff8d4d", fillIntensity: 0.88, groundColor: "#8b5a30", fogColor: "#b2622a", fogDensity: 0.0019, exposure: 1.04, environment: 0.66 },
+    { from: 0.82, name: "Control", keyColor: "#eaf5ff", keyIntensity: 2.85, fillColor: "#a3b6ca", fillIntensity: 0.88, groundColor: "#6c7482", fogColor: "#8c9db2", fogDensity: 0.0009, exposure: 1.14, environment: 0.92 },
   ],
   OFFICE: [
     { from: 0, name: "Recepción", keyColor: "#fff4dd", keyIntensity: 2.91, fillColor: "#e7e1d6", fillIntensity: 1.04, groundColor: "#8e8375", fogColor: "#dfd7c5", fogDensity: 0.00065, exposure: 1.19, environment: 1.0 },

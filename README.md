@@ -55,6 +55,17 @@ npm run check
 
 El comando ejecuta lint, comprobación de tipos, 19 pruebas y builds de los cuatro workspaces.
 
+## QA visual
+
+Cada circuito se fotografía sin HUD desde ocho vistas fijas (salida, curva 1, landmark, mitad, atajo, momento hero, última curva, meta) a través del hook de depuración del runtime:
+
+```bash
+npm run dev
+npm run qa:shots -- ink-print-factory PRINT_FACTORY output/visualqa/factory HIGH
+```
+
+El script necesita Playwright (`PLAYWRIGHT_MODULE` apunta a su `index.mjs` si no está instalado como dependencia) y deja las capturas y `stats.json` con el coste del frame en la carpeta indicada. La dirección visual de los circuitos está en `docs/TRACK_VISUAL_DNA.md` y el presupuesto medido en `docs/TRACK_BUDGET.md`.
+
 ## Estructura
 
 ```text

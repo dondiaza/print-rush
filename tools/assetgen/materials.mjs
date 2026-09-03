@@ -411,6 +411,71 @@ export const MATERIALS = {
   },
 
   // ------------------------------------------------------------------ PAPER
+  // ------------------------------------------------------------------ CLADDING
+  /**
+   * Corrugated wall cladding: the profiled steel sheet an industrial hall is skinned with. The
+   * ribs are the whole material — a strong, regular relief that catches the key light in stripes
+   * and gives a nine-hundred-metre wall a rhythm at every distance. Sheet joins every few ribs,
+   * a little chalking of the paint, and the faint streaks that run down from the fixings.
+   */
+  cladding: {
+    tile: 2.6,
+    base: "#5b6274",
+    build: ({ base, seed }) => {
+      const ribs = 12;
+      const rib = (u) => {
+        // Shifted so the tile edge falls on a flat crown, not on a knee of the profile: the normal
+        // map is derived by finite differences and a knee at the wrap is a visible seam.
+        const phase = (u * ribs + 0.15) % 1;
+        // A trapezoidal profile: flat crown, sloped flank, flat trough.
+        return phase < 0.3 ? 1 : phase < 0.5 ? 1 - (phase - 0.3) / 0.2 : phase < 0.8 ? 0 : (phase - 0.8) / 0.2;
+      };
+      // Sheet joins at a third and two thirds, never at the tile edge.
+      const joins = (v) => (Math.abs(v - 1 / 3) < 0.005 || Math.abs(v - 2 / 3) < 0.005 ? 1 : 0);
+      const chalk = (u, v) => fbm(u, v, { octaves: 4, frequency: 9, seed });
+      const streak = (u, v) => streaks(v, u, { frequency: 30, warp: 0.02, seed: seed + 5 });
+      return {
+        height: (u, v) => rib(u) * 0.8 + joins(v) * -0.15 + chalk(u, v) * 0.08,
+        color: (u, v) => {
+          const r = rib(u);
+          const shade = 0.9 + r * 0.14 + (chalk(u, v) - 0.5) * 0.12 - streak(u, v) * 0.06;
+          return scaleColor(base, shade * (joins(v) ? 0.78 : 1));
+        },
+        roughness: (u, v) => clamp01(0.46 + chalk(u, v) * 0.16 - rib(u) * 0.04),
+      };
+    },
+  },
+
+  // ------------------------------------------------------------------ EPOXY
+  /**
+   * Sealed epoxy floor: the poured, slightly glossy surface of a modern factory bay. Broad
+   * low-frequency tonal drift, fine aggregate, the odd scuff, and painted bay lines at the tile
+   * edge so a wide floor reads as bays rather than as one endless sheet. Smooth and low-roughness,
+   * which is what makes the lamps reflect in it.
+   */
+  epoxy: {
+    tile: 6,
+    base: "#5a5566",
+    build: ({ base, seed }) => {
+      const drift = (u, v) => fbm(u, v, { octaves: 3, frequency: 2, seed });
+      const grain = (u, v) => fbm(u, v, { octaves: 5, frequency: 30, seed: seed + 3 });
+      const line = (u, v) => {
+        // Through the middle of the tile, so the wrap is plain floor on every side.
+        return Math.abs(u - 0.5) < 0.006 || Math.abs(v - 0.5) < 0.006 ? 1 : 0;
+      };
+      const scuff = (u, v) => Math.max(0, fbm(u * 3, v, { octaves: 3, frequency: 6, seed: seed + 9 }) - 0.6) * 2.5;
+      return {
+        height: (u, v) => 0.5 + grain(u, v) * 0.1 - line(u, v) * 0.06,
+        color: (u, v) => {
+          const shade = 0.9 + (drift(u, v) - 0.5) * 0.16 + (grain(u, v) - 0.5) * 0.08 - scuff(u, v) * 0.1;
+          const floor = scaleColor(base, shade);
+          return line(u, v) ? mixColor(floor, hex("#e8dc9a"), 0.8) : floor;
+        },
+        roughness: (u, v) => clamp01(0.34 + scuff(u, v) * 0.3 + grain(u, v) * 0.08),
+      };
+    },
+  },
+
   paper: {
     tile: 0.8,
     base: "#f7f2e8",
@@ -553,7 +618,10 @@ export const MATERIAL_VARIANTS = [
   { id: "plastic_pallet", material: "plastic", scope: "warehouse", base: "#3e6e9e" },
 
   // Print factory: dark epoxy floor and the ink that defines the circuit.
-  { id: "concrete_factory", material: "concrete", scope: "screenprinting", base: "#4a4550" },
+  { id: "concrete_factory", material: "concrete", scope: "screenprinting", base: "#575460" },
+  // The hall itself: corrugated cladding on the walls, sealed epoxy on the floor beyond the route.
+  { id: "cladding_factory", material: "cladding", scope: "screenprinting", base: "#5b6274" },
+  { id: "epoxy_factory", material: "epoxy", scope: "screenprinting", base: "#615e68" },
   { id: "paintedmetal_press", material: "paintedMetal", scope: "screenprinting", base: "#3a3f49" },
   { id: "ink_violet", material: "ink", scope: "screenprinting", base: "#8f5cff" },
   { id: "ink_magenta", material: "ink", scope: "screenprinting", base: "#ff3da6" },

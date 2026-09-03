@@ -428,7 +428,13 @@ describe("asset integration", () => {
    */
   it("never lets a theme name another circuit's asset", () => {
     const scopeOf = new Map(manifest.assets.map((asset) => [asset.id, asset.circuit] as const));
-    const block = source.slice(source.indexOf("const THEME_VISUALS"));
+    /**
+     * Only the theme table itself. The source is every file concatenated, and the hall, barrier and
+     * signage tables declare the same theme names — so a block has to end at the table's own closing
+     * brace, not at the next theme name anywhere in the project.
+     */
+    const table = source.slice(source.indexOf("const THEME_VISUALS"));
+    const block = table.slice(0, table.indexOf("\n};") + 3);
     const themes = [...block.matchAll(/^  ([A-Z_]+): \{$/gm)];
     expect(themes.length, "no themes parsed").toBeGreaterThanOrEqual(5);
 

@@ -14,7 +14,7 @@ import { createPropSources, propSourceKey, type PropSpec } from "@/render/PropLi
 import { buildHero, heroesForTheme } from "@/render/HeroAssets";
 import { beveledBox, ellipsoid, lofted, revolve, tube } from "@/render/Geometry";
 import { LightingRig, zonesForTheme, type QualityLevel } from "@/render/LightingRig";
-import { buildRoadSurface, buildWallSurface, curvatureAt, frameAt } from "@/render/RoadMesh";
+import { buildEdgeLine, buildRoadSurface, curvatureAt, frameAt } from "@/render/RoadMesh";
 import { createBackdrop, type Backdrop } from "@/render/BackdropDome";
 import type { AssetCatalog } from "@/render/AssetCatalog";
 import { scatterDecals, type Decals } from "@/render/DecalScatter";
@@ -22,6 +22,10 @@ import { hangPosters, type Posters } from "@/render/PosterWall";
 import { createCrowd, createSpriteDressing, type Crowd } from "@/render/CrowdSprites";
 import { createTerrain, type Terrain } from "@/render/Terrain";
 import { circuitKeyForTheme } from "@/render/AssetCatalog";
+import { buildHall, type Hall } from "@/render/Hall";
+import { buildBarrier, barrierStyleFor, type Barrier } from "@/render/Barrier";
+import { buildSignage, createBoard, SignPainter, signageStyleFor, type Signage } from "@/render/Signage";
+import { dressTrack, type Animator, type Dressing, type DressingContext, type Placement } from "@/render/sets";
 
 /**
  * TRACK BUILDER V5.
@@ -60,6 +64,12 @@ export type ThemeVisuals = {
   accentB: string;
   /** Prop palette used by the seeded scatter. */
   props: readonly PropSpec[];
+  /**
+   * Per-sector palettes, keyed by sector index. Where a sector has one the scatter draws from it
+   * instead of `props`, so the design office gets desks and screens and the ink hall gets drums —
+   * the story of the space told by what stands beside the road, not one mix repeated for a lap.
+   */
+  zoneProps?: Readonly<Record<number, readonly PropSpec[]>>;
   structureColor: string;
   structureClass: MaterialClass;
   /** Baked material for the big structures — pillars, gantries, the stage deck. */
@@ -147,6 +157,46 @@ const THEME_VISUALS: Record<string, ThemeVisuals> = {
       // Shirts fresh off the press, still on the rack.
       { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_splat" },
     ],
+    zoneProps: {
+      // Design: screens, paper, plants, a rail of samples. Nothing industrial yet.
+      1: [
+        { materialClass: "SCREEN", color: "#65d8ff", kind: "SCREEN", weight: 3, texture: "mat_screen_cyan" },
+        { materialClass: "PAPER", color: "#f7f2e8", kind: "BOX", weight: 3, texture: "mat_paper_default" },
+        { materialClass: "PLASTIC", color: "#4c7a4e", kind: "PLANT", weight: 2 },
+        { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 2, texture: "mat_rawmetal_default" },
+        { materialClass: "PAINTED_METAL", color: "#4b5162", kind: "MACHINE", weight: 1, texture: "mat_paintedmetal_press" },
+      ],
+      // Screens: racking, machines, signage.
+      2: [
+        { materialClass: "PAINTED_METAL", color: "#5f6779", kind: "SHELF", weight: 4, texture: "mat_paintedmetal_press" },
+        { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 3, texture: "mat_paintedmetal_press" },
+        { materialClass: "PAPER", color: "#f7f2e8", kind: "SIGN", weight: 2, texture: "mat_paper_default" },
+        { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "TROLLEY", weight: 2, texture: "mat_rawmetal_default" },
+      ],
+      // Ink: the drums, the presses, the fresh shirts.
+      3: [
+        { materialClass: "INK", color: "#8f5cff", kind: "BOX", weight: 2, texture: "mat_ink_violet" },
+        { materialClass: "INK", color: "#ff3da6", kind: "BOX", weight: 2, texture: "mat_ink_magenta" },
+        { materialClass: "INK", color: "#65d8ff", kind: "BOX", weight: 2, texture: "mat_ink_cyan" },
+        { materialClass: "INK", color: "#ffd43b", kind: "BOX", weight: 2, texture: "mat_ink_yellow" },
+        { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 3, texture: "mat_paintedmetal_press" },
+        { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 3, texture: "mat_fabricprint_splat" },
+      ],
+      // Drying: machinery, crates of cured shirts, rails.
+      4: [
+        { materialClass: "PAINTED_METAL", color: "#3a3f49", kind: "MACHINE", weight: 4, texture: "mat_paintedmetal_press" },
+        { materialClass: "CARDBOARD", color: "#b98a57", kind: "CRATE_STACK", weight: 3, texture: "mat_cardboard_default" },
+        { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "RAIL", weight: 3, texture: "mat_rawmetal_default" },
+      ],
+      // Control and packing: cartons, trolleys, racking, the finished product.
+      5: [
+        { materialClass: "CARDBOARD", color: "#b98a57", kind: "CRATE_STACK", weight: 4, texture: "mat_cardboard_default" },
+        { materialClass: "CARDBOARD", color: "#b98a57", kind: "BOX", weight: 3, texture: "mat_cardboard_default" },
+        { materialClass: "RAW_METAL", color: "#9fa6ad", kind: "TROLLEY", weight: 3, texture: "mat_rawmetal_default" },
+        { materialClass: "PAINTED_METAL", color: "#5f6779", kind: "SHELF", weight: 2, texture: "mat_paintedmetal_press" },
+        { materialClass: "FABRIC", color: "#f7f2e8", kind: "SHELF", weight: 2, texture: "mat_fabricprint_splat" },
+      ],
+    },
   },
   OFFICE: {
     // Carpet where the kart drives; the tile goes on the structures, as in the Megastore.
@@ -219,7 +269,7 @@ export type BuiltTrack = {
   decals: Decals;
   posters: Posters;
   crowd: Crowd;
-  dressing: Crowd;
+  spriteDressing: Crowd;
   boostPads: BuiltFeature[];
   jumpPads: BuiltFeature[];
   itemBoxes: BuiltFeature[];
@@ -228,6 +278,12 @@ export type BuiltTrack = {
   shortcuts: Array<{ from: number; to: number; pads: Vector3[] }>;
   /** Objects the runtime animates each frame. */
   animated: Array<{ mesh: TransformNode; phase: number; kind: string }>;
+  /** Self-contained animation systems: machinery, conveyors, fans, hazards. Run every frame. */
+  animators: Animator[];
+  hall: Hall;
+  barrier: Barrier;
+  signage: Signage;
+  dressing: Dressing | null;
   dispose: () => void;
 };
 
@@ -284,6 +340,11 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   // there is never a frame with nothing behind the track.
   const backdrop = createBackdrop(scene, theme, options.catalog ?? null, visuals.structureColor);
 
+  // ------------------------------------------------------------------ the building
+  // Walls, columns, ceiling, skylights, lamps and ducts around the whole circuit. Built before the
+  // dressing so the set can hang things on its walls and reach its ceiling.
+  const hall = buildHall(scene, nodes, theme, options.quality, materials, terrain);
+
   // ------------------------------------------------------------------ road
   const road = buildRoadSurface(scene, nodes, "track-road", { tileLength: 8, shoulder: 0.4 });
   road.material = materials.get({ ...visuals.road, tile: 6 });
@@ -324,26 +385,39 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
    * Taller than before, too: at sixteen metres away a 1.1 m wall is a kerb on the horizon. A barrier
    * that reads as a boundary from the racing line is what tells a driver where the course ends.
    */
-  const wallMaterial = materials.get({ ...visuals.wall, tile: 3 });
   const barrierNodes = nodes.map((node) => ({ ...node, width: node.width + TerrainConfig.vergeMetres * 2 }));
-  const walls: Mesh[] = [];
+  /**
+   * A profiled barrier — plinth, warning band, rail on posts — instead of the 2.4 m sheet. Low enough
+   * to see the hall over, solid enough to read as the edge of the course. `buildBarrier` sweeps the
+   * theme's profile along these widened nodes, so the visible line and the physics line coincide.
+   */
+  const barrier = buildBarrier(scene, barrierNodes, theme, options.quality, materials);
+  const barrierStyle = barrierStyleFor(theme);
+  void visuals.wall;
+
+  // Painted edge lines: the mark that separates ROAD from SHOULDER before any kerb does.
+  const signageStyle = signageStyleFor(theme);
+  const edgeMaterial = materials.get({ materialClass: "PLASTIC", color: signageStyle.edgeLine, emissive: 0.08 });
+  const edgeLines: Mesh[] = [];
   for (const side of [1, -1] as const) {
-    const wall = buildWallSurface(scene, barrierNodes, side, 2.4, `track-wall-${side > 0 ? "l" : "r"}`, 4);
-    if (!wall) continue;
-    wall.material = wallMaterial;
-    wall.receiveShadows = true;
-    walls.push(wall);
+    const line = buildEdgeLine(scene, nodes, side, 0.32, 0.55, `track-edge-${side > 0 ? "l" : "r"}`);
+    if (!line) continue;
+    line.material = edgeMaterial;
+    line.isPickable = false;
+    edgeLines.push(line);
   }
 
   // ------------------------------------------------------------------ kerbs, lanes, markings
   // A kerb has a chamfered inner edge the tyre rides up. A box has none, which is why the V4 kerbs
   // read as painted stripes lying on the floor rather than as raised concrete.
+  // Narrow and a little taller than before: a 1.3 m slab read as a plate lying on the verge from the
+  // racing line, and a kerb has to read as a raised edge.
   const kerbSource = beveledBox(scene, "track-kerb", {
-    width: 1.3,
-    height: 0.15,
+    width: 0.8,
+    height: 0.2,
     depth: 2.5,
-    bevel: 0.05,
-    cornerRadius: 0.06,
+    bevel: 0.06,
+    cornerRadius: 0.08,
   });
   kerbSource.material = materials.get({ materialClass: "CONCRETE", color: "#f7f2e8", tile: 1.2 });
   kerbSource.isVisible = false;
@@ -354,13 +428,19 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   laneSource.material = lineMaterial;
   laneSource.isVisible = false;
 
-  const kerbLight = Color3.FromHexString(visuals.kerbLight);
-  const kerbDark = Color3.FromHexString(visuals.kerbDark);
+  const kerbLight = Color3.FromHexString(barrierStyle.kerbLight);
+  const kerbDark = Color3.FromHexString(barrierStyle.kerbDark);
+  void visuals.kerbLight;
+  void visuals.kerbDark;
 
   let nextLane = 0;
   let nextProp = 0;
-  const propSources = createPropSources(scene, materials, visuals.props, options.quality);
+  const allProps: PropSpec[] = [...visuals.props];
+  for (const zone of Object.values(visuals.zoneProps ?? {})) allProps.push(...zone);
+  const propSources = createPropSources(scene, materials, allProps, options.quality);
   const propWeights = buildWeightTable(visuals.props);
+  const zoneWeights = new Map<number, PropSpec[]>();
+  for (const [sector, specs] of Object.entries(visuals.zoneProps ?? {})) zoneWeights.set(Number(sector), buildWeightTable(specs));
   const animated: BuiltTrack["animated"] = [];
   let propCount = 0;
 
@@ -397,7 +477,8 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       nextProp = node.distance + 11 / Math.max(0.35, density);
       for (const side of [1, -1] as const) {
         if (random() > 0.86) continue;
-        const spec = propWeights[Math.floor(random() * propWeights.length)]!;
+        const table = zoneWeights.get(node.sector) ?? propWeights;
+        const spec = table[Math.floor(random() * table.length)]!;
         // Keyed by kind *and* print: two shirt displays with different designs are two sources.
         const source = propSources.get(propSourceKey(spec.kind, spec.texture));
         if (!source) continue;
@@ -469,22 +550,18 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     (fraction, side) => {
       const index = Math.floor(((fraction % 1) + 1) % 1 * nodes.length) % nodes.length;
       const node = nodes[index]!;
-      // Only where the wall is actually closed on that side.
-      if (side > 0 ? !node.wallLeft : !node.wallRight) return null;
       const frame = frameAt(nodes, index);
-      // The barrier moved out to the verge edge, so the posters on it move with it. Anchoring them
-      // to the tarmac would have left them floating in the middle of the run-off.
-      const half = node.width / 2 + TerrainConfig.vergeMetres;
-      const inward = new Vector3(-frame.nx * side, 0, -frame.nz * side);
-      return {
-        // On the barrier's inner face, high enough to read over it from the racing line.
-        position: new Vector3(
-          node.x + frame.nx * side * (half + 0.35),
-          node.y + 2.6 + random() * 1.2,
-          node.z + frame.nz * side * (half + 0.35),
-        ),
-        facing: inward,
-      };
+      /**
+       * On the hall's wall, not on the barrier.
+       *
+       * The barrier is a metre high now, so a poster on it would float. The building has walls, and
+       * a poster belongs on a wall: the anchor projects the point beside the road out to the nearest
+       * wall and hangs the poster there, high, as a hoarding. Bigger and further, which is what a
+       * background layer should be.
+       */
+      const half = node.width / 2 + TerrainConfig.vergeMetres + 20;
+      const anchor = hall.wallAnchor(node.x + frame.nx * side * half, node.z + frame.nz * side * half, hall.floorY + 7 + random() * 6);
+      return { position: anchor.position, facing: anchor.facing };
     },
   );
 
@@ -518,7 +595,7 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     },
   );
   // Plants and hanging stock, on the same sampler as the crowd.
-  const dressing = createSpriteDressing(
+  const spriteDressing = createSpriteDressing(
     scene,
     theme,
     options.quality,
@@ -543,6 +620,84 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
 
   // ------------------------------------------------------------------ features
   const nodeAt = (progress: number): TrackNode => nodes[Math.floor(((progress % 1) + 1) % 1 * nodes.length) % nodes.length]!;
+
+  // ------------------------------------------------------------------ the set
+  /**
+   * The theme's authored dressing: hero landmarks where the route was designed around them, the
+   * zone-by-zone machinery, the moving parts and the hazards that belong to the process. Built
+   * before the generic features so a set can claim the landmarks and the hazards.
+   */
+  const animators: Animator[] = [];
+  /**
+   * Sector ranges from contiguous runs, with the wrap handled.
+   *
+   * The bake gives the last node or two the first control point's attributes, so sector 1 has nodes
+   * at progress 0.998 as well as at 0. Taking min and max over its nodes therefore gave sector 1 the
+   * whole lap, and everything the set placed by "a third of the way into the design zone" landed a
+   * third of the way round the circuit. A run that touches the end of the lap is folded onto the run
+   * at the start with a negative `from`, which every consumer wraps modulo one.
+   */
+  const sectorRanges = new Map<number, { from: number; to: number }>();
+  {
+    const runs: Array<{ sector: number; from: number; to: number; length: number }> = [];
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]!;
+      const last = runs[runs.length - 1];
+      if (last && last.sector === node.sector) {
+        last.to = node.progress;
+        last.length += 1;
+      } else {
+        runs.push({ sector: node.sector, from: node.progress, to: node.progress, length: 1 });
+      }
+    }
+    const first = runs[0];
+    const tail = runs[runs.length - 1];
+    if (first && tail && runs.length > 1 && first.sector === tail.sector) {
+      first.from = tail.from - 1;
+      first.length += tail.length;
+      runs.pop();
+    }
+    for (const run of runs) {
+      const existing = sectorRanges.get(run.sector);
+      const previousLength = existing ? (existing.to - existing.from) * nodes.length : -1;
+      if (!existing || run.length > previousLength) sectorRanges.set(run.sector, { from: run.from, to: run.to });
+    }
+  }
+  const placementAt = (progress: number): Placement => {
+    const index = Math.floor(((progress % 1) + 1) % 1 * nodes.length) % nodes.length;
+    return { node: nodes[index]!, index, frame: frameAt(nodes, index) };
+  };
+  const dressingContext: DressingContext = {
+    scene,
+    materials,
+    lighting,
+    terrain,
+    hall,
+    baked,
+    nodes,
+    quality: options.quality,
+    detailed: options.quality === "HIGH" || options.quality === "ULTRA",
+    random,
+    catalog: options.catalog ?? null,
+    accentA: visuals.accentA,
+    accentB: visuals.accentB,
+    at: placementAt,
+    sectorRange: (sector) => sectorRanges.get(sector) ?? { from: 0, to: 1 },
+    heightAt: terrain.heightAt,
+    beside: (progress, lateral, height = 0) => {
+      const placement = placementAt(progress);
+      const x = placement.node.x + placement.frame.nx * lateral;
+      const z = placement.node.z + placement.frame.nz * lateral;
+      const halfRoad = placement.node.width * 0.5;
+      const onRoad = Math.abs(lateral) <= halfRoad + TerrainConfig.vergeMetres;
+      const banked = Math.tan(placement.node.banking) * Math.max(-halfRoad, Math.min(halfRoad, lateral));
+      const y = onRoad ? placement.node.y + banked : terrain.heightAt(x, z);
+      return new Vector3(x, y + height, z);
+    },
+    animators,
+    addShadowCaster: (mesh) => lighting.addShadowCaster(mesh),
+  };
+  const dressing = dressTrack(theme, dressingContext);
 
   const boostPads: BuiltFeature[] = [];
   const jumpPads: BuiltFeature[] = [];
@@ -679,6 +834,20 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       const frame = frameAt(nodes, nodes.indexOf(node));
       const holder = new TransformNode(`hazard-${feature.progress}`, scene);
       holder.position.set(node.x + frame.nx * feature.lane, node.y, node.z + frame.nz * feature.lane);
+      holder.rotation.y = frame.heading;
+      // A hazard that belongs to the world, when the set knows how to build one for this kind.
+      if (dressing?.buildHazard?.(feature.hazard, holder, { node, index: nodes.indexOf(node), frame }, feature.lane)) {
+        hazards.push({
+          kind: feature.hazard,
+          position: holder.position.clone(),
+          node: holder,
+          progress: feature.progress,
+          cooldown: 0,
+          power: 1,
+        });
+        continue;
+      }
+      holder.rotation.y = 0;
       // A crate hanging from a chain, over a painted warning ring on the floor. The ring is the
       // telegraph: a hazard the player cannot see coming is a cheap hazard.
       const body = beveledBox(scene, `hazard-body-${feature.progress}`, {
@@ -726,6 +895,14 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       });
       animated.push({ mesh: holder, phase: feature.progress * 11, kind: "HAZARD" });
     } else if (feature.kind === "LANDMARK") {
+      if (dressing?.landmarksHandled) {
+        // The set placed this circuit's landmarks where the route was designed around them.
+        const placed = dressing.landmarks[landmarks.length];
+        if (placed) {
+          landmarks.push({ kind: "LANDMARK", position: placed.position.clone(), node: null, progress: placed.progress, cooldown: 0, power: 1, label: placed.label });
+        }
+        continue;
+      }
       const node = nodeAt(feature.progress);
       const index = nodes.indexOf(node);
       const frame = frameAt(nodes, index);
@@ -847,15 +1024,55 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   truss.material = materials.get({ materialClass: "RAW_METAL", color: "#8f979f" });
   lighting.addShadowCaster(truss);
 
-  const banner = beveledBox(scene, "start-banner", {
-    width: start.width + 3,
-    height: 1.7,
-    depth: 0.35,
-    bevel: 0.07,
-  });
+  /**
+   * The finish board carries the brand and the word META, painted, with a lit accent rule — a real
+   * gate rather than a glowing bar. The painter is shared with the zone signs, so the finish reads
+   * as part of the same signage system the player has followed round the lap.
+   */
+  const gatePainter = new SignPainter(scene);
+  const gatePlate = materials.get({ materialClass: "PLASTIC", color: signageStyle.plate });
+  const banner = createBoard(
+    scene,
+    "start-banner",
+    { width: start.width - 1, height: 2.1, depth: 0.35 },
+    gatePainter.material("PAMPLING", { width: 1024, height: 160, plate: signageStyle.plate, ink: signageStyle.ink, accent: visuals.accentA, caption: "META", glow: 0.5 }),
+    gatePlate,
+    { doubleSided: true },
+  );
   banner.position.set(start.x, start.y + 8.1, start.z);
   banner.rotation.y = startFrame.heading;
-  banner.material = materials.glow("start-banner-glow", visuals.accentA, 0.9);
+  edgeLines.push(banner);
+  // Chequered flags either side of the board.
+  for (const side of [-1, 1] as const) {
+    const flag = createBoard(
+      scene,
+      `start-flag-${side}`,
+      { width: 1.9, height: 1.9, depth: 0.12 },
+      gatePainter.material("CHEQUER", { width: 256, height: 256, plate: "#f7f2e8", ink: "#12101a", checker: true }),
+      gatePlate,
+      { doubleSided: true },
+    );
+    flag.position.set(
+      start.x + startFrame.nx * side * (start.width * 0.5 + 0.9),
+      start.y + 8.1,
+      start.z + startFrame.nz * side * (start.width * 0.5 + 0.9),
+    );
+    flag.rotation.y = startFrame.heading;
+    edgeLines.push(flag);
+  }
+
+  // ------------------------------------------------------------------ signage
+  // Zone gates at every sector start and chevron boards before every real corner.
+  const signage = buildSignage({
+    scene,
+    nodes,
+    sectors: baked.blueprint.sectors,
+    theme,
+    quality: options.quality,
+    materials,
+    heightAt: terrain.heightAt,
+    avoidProgress: [0, ...baked.blueprint.features.filter((feature) => feature.kind === "JUMP").map((feature) => feature.progress)],
+  });
 
   for (let pod = 0; pod < 5; pod += 1) {
     const across = (pod - 2) * 1.5;
@@ -890,7 +1107,7 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     decals,
     posters,
     crowd,
-    dressing,
+    spriteDressing,
     boostPads,
     jumpPads,
     itemBoxes,
@@ -898,7 +1115,17 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
     landmarks,
     shortcuts,
     animated,
+    animators,
+    hall,
+    barrier,
+    signage,
+    dressing: dressing ?? null,
     dispose: () => {
+      dressing?.dispose();
+      signage.dispose();
+      gatePainter.dispose();
+      barrier.dispose();
+      hall.dispose();
       lighting.dispose();
       materials.dispose();
       backdrop.dispose();
@@ -906,9 +1133,9 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
       decals.dispose();
       posters.dispose();
       crowd.dispose();
-      dressing.dispose();
+      spriteDressing.dispose();
       road.dispose();
-      walls.forEach((wall) => wall.dispose());
+      edgeLines.forEach((line) => line.dispose());
       kerbSource.dispose();
       laneSource.dispose();
       propSources.forEach((source) => source.mesh.dispose());

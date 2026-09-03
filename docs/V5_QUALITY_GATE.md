@@ -120,11 +120,46 @@ arriba: dos apartados, no una impresión general.
 
 ## LO QUE ESTA PUNTUACIÓN NO ES
 
-Ningún apartado visual se ha verificado **en pantalla**. No hay navegador en el entorno de trabajo,
-así que no hay capturas ni FPS medidos. Lo verificado es: geometría válida (posiciones finitas,
+Hasta la etapa 24 ningún apartado visual se había verificado **en pantalla**: no había navegador en el
+entorno de trabajo, así que no había capturas ni FPS medidos. Desde la etapa 24 hay capturas reales
+(sección final de este documento) y la parte visual se puntúa sobre ellas; el FPS sigue sin medirse
+en una GPU real. Lo verificado es: geometría válida (posiciones finitas,
 normales unitarias, índices en rango, dimensiones correctas) mediante 28 tests con `NullEngine`,
 presupuestos de triángulos y draw calls medidos, y que las rutas se sirven sin errores.
 
 Las notas de VISUAL DENSITY, LIGHTING, VFX y SPEED FEEL son juicios sobre el código escrito contra
 la normativa del art bible, no sobre frames observados. Hay que confirmarlas con el bucle de
 revisión visual de la etapa 4.
+
+---
+
+## VISUAL QA EN PANTALLA (2026-09-03)
+
+Por primera vez hay frames reales. `tools/visualqa/shots.mjs` fotografía cada circuito sin HUD desde
+START · TURN 1 · LANDMARK 1 · MIDDLE · SHORTCUT · HERO · FINAL TURN · FINISH más vistas auxiliares, a
+través del hook `window.__printRushQA`. La puntuación de abajo es sobre esas capturas, no sobre el
+código, y lo que se juzga es la Serigrafía (circuito dorado, etapa 24). Escala 1–10; ninguna
+categoría crítica por debajo de 7 y media ≥ 8 para aceptar la pista.
+
+| Categoría | Serigrafía | Evidencia en captura | Qué la subiría |
+|---|---:|---|---|
+| Composition | 8 | Techo con cerchas, lámparas y conductos que fugan con la pista; muros con bandas al fondo; seis capas en cada vista | Encuadres con el carrusel centrado desde la entrada a la sala |
+| Materials | 7 | Epoxi con líneas de bahía, chapa ondulada, hormigón, tinta húmeda reflejando lámparas, tela mate en las montañas | Más variación macro en la carretera; suciedad de uso en la trazada |
+| Lighting | 8 | Cinco salas con balance propio; lucernarios y colgantes emisivos; luz puntual en carrusel, secador y UV; secador naranja | Sombras de las platinas sobre la tinta más marcadas (casters) |
+| Depth | 8 | Pista → barrera → props → columnas → muro con ventanas → panorama | — |
+| Theme | 9 | El proceso de serigrafía se lee sector a sector: mesa, pantallas, prensa, horno, control | — |
+| Readability | 8 | Líneas de borde, bordillos, barrera con banda de aviso, puertas de zona con nombre, chevrones antes de cada curva, meta con marca | Chevrones más grandes en curvas ciegas |
+| Detail | 7 | Densidad alta junto a la pista; racks, mesas, cartones, pilas, cubas, mangueras | Micro-detalle en primer plano (etiquetas, cables) |
+| Originality | 8 | Universo propio: pulpo-carrusel, líneas CMYK aéreas, montañas de camisetas, cubas con agitador | — |
+| Game feel | 7 | Lámparas y conductos que pasan a velocidad; rotor, cinta, ventiladores, rasquetas en movimiento | Verificar en GPU real el ritmo de los elementos cercanos a 110 km/h |
+| Polish | 7 | Sin cubos desnudos, sin cielo blanco, sin carteles espejados tras las correcciones de la etapa | Bordes de charcos, sombras de contacto en props apoyados |
+| **Media** | **7,7** | | |
+
+Media 7,7 con ninguna categoría por debajo de 7: la pista pasa el umbral mínimo y se queda a tres
+décimas del objetivo de 8. Las tres décimas están nombradas en la última columna.
+
+Los otros cuatro circuitos tienen la **infraestructura** del estándar (nave, barrera, líneas, puertas,
+chevrones, meta) y sus capturas confirman que se dibujan correctamente, pero sin set autoral su Theme
+y Detail quedan en 5–6: son el trabajo pendiente y no se puntúan como cerrados.
+
+Métricas del frame en `docs/TRACK_BUDGET.md`.

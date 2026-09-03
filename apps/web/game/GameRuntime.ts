@@ -1,4 +1,5 @@
 import {
+  type AbstractMesh,
   Color3,
   Engine,
   Mesh,
@@ -143,6 +144,54 @@ export type Standing = {
   bestLapMs: number | null;
   /** Metres behind the winner at the moment the player finished. Zero for the leader. */
   gapMetres: number;
+};
+
+/** A held QA camera. Distances in metres; angles in radians. See `installQAHook`. */
+export type PhotoShot = {
+  /** Lap progress of the point photographed, 0..1. */
+  progress: number;
+  /** Metres behind the point along the road. */
+  back?: number;
+  /** Metres above the road. */
+  height?: number;
+  /** Metres to the left of the centreline. */
+  lateral?: number;
+  /** Metres down the road the camera looks at. */
+  lookAhead?: number;
+  aimLateral?: number;
+  aimHeight?: number;
+  fov?: number;
+};
+
+export type QAStats = {
+  fps: number;
+  frameMs: number;
+  drawCalls: number;
+  activeMeshes: number;
+  totalMeshes: number;
+  triangles: number;
+  materials: number;
+  textures: number;
+  lights: number;
+  particleSystems: number;
+  materialLibrary: number;
+  bakedTextures: number;
+};
+
+export type PrintRushQA = {
+  photo: (progress: number, options?: Omit<PhotoShot, "progress">) => void;
+  resume: () => void;
+  stats: () => QAStats;
+  /** Position, visibility and material/texture state of one mesh, for debugging a frame. */
+  inspect: (name: string) => unknown;
+  track: () => {
+    id: string;
+    theme: string;
+    landmarks: Array<{ label: string; progress: number }>;
+    shortcuts: Array<{ from: number; to: number }>;
+    jumps: number[];
+    hazards: Array<{ kind: string; progress: number }>;
+  };
 };
 
 export type RaceResult = {
@@ -373,6 +422,15 @@ export class GameRuntime {
   private ranking: string[] = [];
 
   private readonly cameraContext: CameraContext = { aimPoint: new Vector3(), floorY: 0 };
+  /**
+   * A fixed camera for visual QA, or null in normal play.
+   *
+   * Set through the `window.__printRushQA` hook that `start()` installs when the debug flag is on.
+   * While a shot is held the simulation is paused and the race camera is bypassed, so a screenshot
+   * tool can photograph any point of the lap from a repeatable position — start, turn one, the hero
+   * moment — without driving there. It is QA infrastructure, not a gameplay camera.
+   */
+  private photo: PhotoShot | null = null;
   private readonly scratch = new Vector3();
 
   private constructor(private readonly options: GameRuntimeOptions, boot: Boot) {
@@ -566,6 +624,7 @@ export class GameRuntime {
   start(): void {
     this.input.attach();
     this.audio.start();
+    this.installQAHook();
     const resize = (): void => this.engine.resize();
     const run = (): void => this.frame();
     const visibility = (): void => {
@@ -1178,6 +1237,8 @@ export class GameRuntime {
 
     // ---------------------------------------------------------------- animated dressing
     const time = now;
+    // The set's own machinery: carousel, conveyors, fans, presses. Each system keeps its own state.
+    for (const animator of this.track.animators) animator(dt, now, this.elapsedMs);
     for (const entry of this.track.animated) {
       if (entry.kind === "ITEM") {
         entry.mesh.rotation.y += dt * 1.7;
@@ -1210,7 +1271,9 @@ export class GameRuntime {
     }
 
     // ---------------------------------------------------------------- camera
-    if (this.finished) {
+    if (this.photo) {
+      this.applyPhoto(this.photo);
+    } else if (this.finished) {
       this.updateFinishCamera(dt);
     } else {
       const nodes = this.track.baked.definition.nodes;
@@ -1224,6 +1287,122 @@ export class GameRuntime {
     // Consumed unconditionally, including during the finish presentation: a toggle that silently
     // does nothing while the orbit camera is running would look like a broken button.
     if (this.input.consumeViewToggle()) this.applyCameraView(this.camera.toggleView());
+  }
+
+  // ------------------------------------------------------------------ visual QA
+
+  /**
+   * Exposes a small, explicit surface for automated visual QA when the debug flag is set.
+   *
+   * The capture script drives it: hold a photo at a lap progress, read the frame's cost, release.
+   * Nothing here is reachable from gameplay and nothing is installed unless `print-rush.debug` is
+   * "1" in local storage — the same flag that turns on the debug overlay.
+   */
+  private installQAHook(): void {
+    if (typeof window === "undefined") return;
+    let enabled = false;
+    try {
+      enabled = window.localStorage.getItem("print-rush.debug") === "1";
+    } catch {
+      enabled = false;
+    }
+    if (!enabled) return;
+    const hook: PrintRushQA = {
+      photo: (progress, options = {}) => {
+        this.photo = { progress, ...options };
+        this.input.paused = true;
+        this.audio.setPaused(true);
+      },
+      resume: () => {
+        this.photo = null;
+        this.input.paused = false;
+        this.audio.setPaused(false);
+      },
+      stats: () => this.qaStats(),
+      inspect: (name) => {
+        const mesh = this.scene.getMeshByName(name);
+        if (!mesh) return null;
+        const materials = mesh.material && "subMaterials" in mesh.material
+          ? (mesh.material as { subMaterials: Array<{ name: string } | null> }).subMaterials
+          : [mesh.material];
+        return {
+          position: [mesh.position.x, mesh.position.y, mesh.position.z],
+          visible: mesh.isVisible && mesh.isEnabled(),
+          vertices: mesh.getTotalVertices(),
+          materials: materials.map((material) => {
+            const pbr = material as { name?: string; albedoTexture?: { isReady: () => boolean; getSize: () => { width: number; height: number } } | null } | null;
+            return {
+              name: pbr?.name ?? null,
+              texture: pbr?.albedoTexture ? { ready: pbr.albedoTexture.isReady(), size: pbr.albedoTexture.getSize() } : null,
+            };
+          }),
+        };
+      },
+      track: () => ({
+        id: this.track.baked.blueprint.id,
+        theme: this.track.baked.blueprint.theme,
+        landmarks: this.track.landmarks.map((landmark) => ({ label: landmark.label ?? "", progress: landmark.progress })),
+        shortcuts: this.track.shortcuts.map((shortcut) => ({ from: shortcut.from, to: shortcut.to })),
+        jumps: this.track.jumpPads.map((jump) => jump.progress),
+        hazards: this.track.hazards.map((hazard) => ({ kind: hazard.kind, progress: hazard.progress })),
+      }),
+    };
+    (window as unknown as { __printRushQA?: PrintRushQA }).__printRushQA = hook;
+  }
+
+  /** Places the camera for a held photo: beside and behind a point of the lap, looking down the road. */
+  private applyPhoto(shot: PhotoShot): void {
+    const nodes = this.track.baked.definition.nodes;
+    const count = nodes.length;
+    const index = Math.floor(((shot.progress % 1) + 1) % 1 * count) % count;
+    const node = nodes[index]!;
+    const ahead = nodes[(index + 1) % count]!;
+    const behind = nodes[(index - 1 + count) % count]!;
+    const tx0 = ahead.x - behind.x;
+    const tz0 = ahead.z - behind.z;
+    const length = Math.hypot(tx0, tz0) || 1;
+    const tx = tx0 / length;
+    const tz = tz0 / length;
+    // Left normal, as `frameAt` defines it.
+    const nx = -tz;
+    const nz = tx;
+    const back = shot.back ?? 9;
+    const height = shot.height ?? 3.6;
+    const lateral = shot.lateral ?? 0;
+    const lookAhead = shot.lookAhead ?? 26;
+    const camera = this.camera.camera;
+    camera.position.set(
+      node.x - tx * back + nx * lateral,
+      node.y + height,
+      node.z - tz * back + nz * lateral,
+    );
+    const target = nodes[(index + Math.round(lookAhead / 2.5)) % count]!;
+    camera.setTarget(new Vector3(target.x + nx * (shot.aimLateral ?? 0), target.y + (shot.aimHeight ?? 1.6), target.z + nz * (shot.aimLateral ?? 0)));
+    if (shot.fov !== undefined) camera.fov = shot.fov;
+  }
+
+  /** The frame's measured cost, for the per-circuit budget the art direction records. */
+  private qaStats(): QAStats {
+    const scene = this.scene;
+    let triangles = 0;
+    for (const mesh of scene.getActiveMeshes().data) {
+      const abstract = mesh as AbstractMesh & { getTotalIndices?: () => number };
+      triangles += (abstract.getTotalIndices?.() ?? 0) / 3;
+    }
+    return {
+      fps: Math.round(1_000 / this.frameMs),
+      frameMs: Math.round(this.frameMs * 10) / 10,
+      drawCalls: this.instrumentation.drawCallsCounter.current,
+      activeMeshes: scene.getActiveMeshes().length,
+      totalMeshes: scene.meshes.length,
+      triangles: Math.round(triangles),
+      materials: scene.materials.length,
+      textures: scene.textures.length,
+      lights: scene.lights.length,
+      particleSystems: scene.particleSystems.length,
+      materialLibrary: this.track.materials.size,
+      bakedTextures: this.track.materials.bakedTextureCount,
+    };
   }
 
   /**

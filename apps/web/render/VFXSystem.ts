@@ -411,7 +411,7 @@ export class VFXSystem {
  * A radial-gradient sprite generated once. V4 used four-segment spheres as smoke; a soft sprite is
  * both cheaper and the difference between "smoke" and "small grey balls".
  */
-function createSoftSprite(scene: Scene): Texture {
+export function createSoftSprite(scene: Scene): Texture {
   const size = 64;
   const texture = new DynamicTexture("vfx-sprite", { width: size, height: size }, scene, true);
   const context = texture.getContext() as unknown as CanvasRenderingContext2D;

@@ -148,7 +148,16 @@ export function createBackdrop(
     // ceiling directly above the floor at the top edge.
     panorama.wrapV = Texture.CLAMP_ADDRESSMODE;
     material.emissiveTexture = panorama;
-    material.emissiveColor = Color3.White();
+    /**
+     * Black, not white, beside an emissive texture.
+     *
+     * The standard fragment shader *adds* the sampled emissive texture to the  uniform
+     * (), so a white uniform plus any texture
+     * saturates to pure white and the panorama is never seen. Verified in a rendered frame, not
+     * assumed: the sky of every circuit was a blank white sheet with the cap showing as a dark arc.
+     * With the uniform at black the texture is the only term, which is the intent.
+     */
+    material.emissiveColor = Color3.Black();
     material.diffuseColor = Color3.Black();
     assetId = asset!.id;
   } else {

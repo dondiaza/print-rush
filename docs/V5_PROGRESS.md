@@ -6,12 +6,85 @@ Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **637 tests** y build de los cinco
+Estado del build: `npm run check` **verde** — lint, typecheck, **642 tests** y build de los cinco
 workspaces.
 
 ---
 
 ## DONE
+
+### ETAPA 24 — RECONSTRUCCIÓN VISUAL DE CIRCUITOS: LA NAVE, LA BARRERA, LA SEÑALIZACIÓN Y EL SET DORADO (2026-09-03)
+
+Brief: *Track Visual Generator V3*. Dirección y principios en `docs/TRACK_VISUAL_DNA.md`; script de
+color y luz en `docs/track-color-script.json`. Todo lo de abajo está **verificado en pantalla**: por
+primera vez el proyecto tiene capturas reales de la escena (Chromium headless con SwiftShader, sin
+HUD) desde ocho vistas fijas por circuito, y las decisiones se tomaron mirándolas.
+
+**Lo que había, medido en el primer frame real (`shots-v0`):** el cielo de los cinco circuitos era
+una sábana blanca — el material del panorama sumaba `emissiveColor = White` a la textura emisiva y el
+shader saturaba a blanco; la tapa del cilindro se veía como un arco oscuro. Debajo, una cinta de
+carretera sobre un plano de hormigón infinito con textura repetida, sin barrera visible, props de
+juguete dispersos y una única jerarquía: pista + suelo. Ningún edificio.
+
+- [x] **Cielo:** `BackdropDome` con emisivo negro junto a la textura. El panorama se ve por primera vez
+- [x] **`render/Hall.ts` — el edificio.** Muros perimetrales por bandas (zócalo, franja de aviso,
+      chapa ondulada, banda de ventanas con paneles instanciados, remate), pilastras y retícula de
+      columnas que esquiva la pista, techo con cerchas y correas, lucernarios, conductos principales,
+      **lámparas colgantes que siguen la pista** a altura constante y un conducto que gira con ella
+      (las flow lines del brief). Especificado por tema para los cinco mundos; todo lo repetido
+      instanciado
+- [x] **`render/Barrier.ts` — barrera perfilada** en lugar del muro de 2,4 m: perfil barrido
+      (zócalo biselado + banda de aviso + barandilla sobre postes), ~1 m, se ve el mundo por encima;
+      respeta las aberturas de atajo. Un estilo por tema. La línea física no cambia
+- [x] **Track ribbon:** líneas de borde pintadas (`buildEdgeLine`), bordillos con los colores del
+      tema desde `Barrier`, arcén distinto. ROAD / SHOULDER / BARRIER / OFFTRACK / BACKGROUND
+      separados sin depender de flechas
+- [x] **`render/Signage.ts`:** puertas de zona con el nombre del sector en cada cambio de sector,
+      tableros de chevrones en el exterior de cada curva real 18 m antes del vértice, tablero de meta
+      con PAMPLING / META y banderas a cuadros. Texto real en `DynamicTexture` (tamaños potencia de
+      dos), plano frontal separado de la placa biselada — una caja lofteada reparte la textura por el
+      perímetro y el texto salía troceado y espejado
+- [x] **`render/sets/` — set autoral del circuito dorado (Serigrafía):** DISEÑO (mesa gigante con
+      monitor que muestra un boceto, rotulador de 7 m, taza, mesa de luz, tablero de muestras) ·
+      PANTALLAS (racks en A con pantallas, unidad de insolación con tapa que se abre y luz UV real,
+      cabina de revelado con niebla) · TINTA (pulpo-carrusel de 8 brazos que gira sobre la pista,
+      rasquetas que barren, goteo CMYK, platinas que pasan a 5,6 m sobre los karts, cubas CMYK con
+      agitadores, cuatro líneas de tinta aéreas que siguen la pista, charcos de tinta con geometría
+      húmeda, tres montañas de camisetas, vapor y polvo en suspensión, luz puntual cálida) · SECADO
+      (túnel que envuelve la pista con resistencias que pulsan, ventiladores que giran, chimeneas al
+      techo, cinta con camisetas que se mueven, calima a la salida, luz naranja) · CONTROL (mesas de
+      inspección con pilas dobladas, cartones, jaulas, tablero "Control de calidad")
+- [x] **Hazards del mundo:** PRESS es una prensa sobre el carril cuyo cabezal baja; STEAM una rejilla
+      con chorro de vapor. Ambos sincronizados con la fase que usa la física
+- [x] **Props por zona** (`zoneProps` en `THEME_VISUALS`): la dispersión sembrada elige de una paleta
+      por sector, así el diseño tiene pantallas y papel y la tinta tiene bidones
+- [x] **Animadores** (`BuiltTrack.animators`): sistemas autocontenidos que el runtime llama cada frame
+      con `dt`, reloj de pared y reloj de carrera
+- [x] **Texturas nuevas** (procedurales, horneadas a fichero): chapa ondulada y suelo epoxi con líneas
+      de bahía, sin costura; colores base del suelo de la nave neutralizados
+- [x] **Iluminación** de la Serigrafía reescrita: neutro industrial con las tintas como acento, cinco
+      salas distintas (la sala de tinta es la única magenta-violeta; el secador la única cálida)
+- [x] **QA visual:** `window.__printRushQA` (con `print-rush.debug = "1"`): `photo(progress, …)` fija
+      la cámara en cualquier punto, `stats()` mide el frame, `inspect(name)` lee material y textura,
+      `track()` lista landmarks. Script de captura de ocho vistas + auxiliares
+- [x] Pruebas nuevas: `web/tests/hall.test.ts` (21) — muros fuera de la pista, techo por encima,
+      columnas a más de 4 m de la carretera, barrera cerrada donde hay muro y abierta donde no,
+      una puerta por sector y tableros en las curvas, en los cinco circuitos. `assets.test.ts`
+      acotado a la tabla de temas (el código concatenado ya tiene varias tablas con los mismos
+      nombres). `LightingRig.attachCamera` sin doble adjunción (once errores por carrera)
+
+**Fallos encontrados mirando frames, no código:** el panorama blanco; los tableros en blanco (plano
+orientado hacia dentro: un plano de Babylon mira a −Z); el tambor del carrusel sobre la carretera (el
+centro de la espiral está a 7 m del atajo "bajo el carrusel", así que el tambor se dimensiona por la
+holgura real y los brazos por el radio de la espiral); los rangos de sector con el lap envuelto (el
+horneado da a los dos últimos nodos el sector 1, y "un tercio de la zona de diseño" caía un tercio de
+vuelta más allá); el túnel negro (dos bobinados sobre los mismos vértices anulan las normales).
+
+**Pendiente y con nombre:** sets autorales para Tienda, Almacén, Oficinas y Manga. Reciben ya la nave,
+la barrera, las líneas, las puertas de zona, los chevrones y la meta, con sus especificaciones por
+tema; les falta lo que la Serigrafía tiene en `render/sets/PrintFactorySet.ts`: heroes propios,
+maquinaria animada, hazards del mundo y VFX. Y la biblioteca de referencia del brief no está en el
+repo — ver `docs/TRACK_VISUAL_DNA.md` §0.
 
 ### ETAPA 23 — SALTO, OBJETOS Y CÁMARA EN PRIMERA PERSONA (2026-09-03)
 

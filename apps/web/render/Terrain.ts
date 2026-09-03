@@ -66,31 +66,33 @@ type GroundLook = {
 const GROUND: Record<string, GroundLook> = {
   FLAGSHIP: {
     verge: { materialClass: "FLOOR_TILE", color: "#8e857b", texture: "mat_floortile_store", tile: 3 },
-    field: { materialClass: "CONCRETE", color: "#9a9088", tile: 9 },
+    // The shop floor beyond the aisle is the same polished tile, at a coarser repeat.
+    field: { materialClass: "FLOOR_TILE", color: "#9a9088", texture: "mat_floortile_store", tile: 7 },
     rumbleLight: "#f7f2e8",
     rumbleDark: "#ff3da6",
   },
   WAREHOUSE: {
     verge: { materialClass: "CONCRETE", color: "#818893", texture: "mat_concrete_warehouse", tile: 4 },
-    field: { materialClass: "CONCRETE", color: "#8c939c", tile: 10 },
+    field: { materialClass: "CONCRETE", color: "#8c939c", texture: "mat_concrete_warehouse", tile: 9 },
     rumbleLight: "#ffc02e",
     rumbleDark: "#2b2732",
   },
   PRINT_FACTORY: {
     verge: { materialClass: "CONCRETE", color: "#605a6b", texture: "mat_concrete_factory", tile: 4 },
-    field: { materialClass: "CONCRETE", color: "#665f73", tile: 10 },
+    // Sealed epoxy: the hall floor beyond the marked route, with its bay lines, not open ground.
+    field: { materialClass: "FLOOR_TILE", color: "#5a5566", texture: "mat_epoxy_factory", tile: 12 },
     rumbleLight: "#ffd43b",
     rumbleDark: "#8f5cff",
   },
   OFFICE: {
     verge: { materialClass: "FLOOR_TILE", color: "#8f867b", texture: "mat_carpet_office", tile: 3 },
-    field: { materialClass: "CONCRETE", color: "#a49a8e", tile: 9 },
+    field: { materialClass: "FLOOR_TILE", color: "#a49a8e", texture: "mat_floortile_office", tile: 6 },
     rumbleLight: "#f7f2e8",
     rumbleDark: "#65d8ff",
   },
   MANGA: {
     verge: { materialClass: "FLOOR_TILE", color: "#423a63", texture: "mat_carpet_manga", tile: 3 },
-    field: { materialClass: "CONCRETE", color: "#433969", tile: 10 },
+    field: { materialClass: "FLOOR_TILE", color: "#433969", texture: "mat_carpet_manga", tile: 8 },
     rumbleLight: "#ff3da6",
     rumbleDark: "#8f5cff",
   },

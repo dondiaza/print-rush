@@ -137,6 +137,57 @@ export function buildWallSurface(
 }
 
 /**
+ * A painted line along one edge of the road: a flat strip from `inset` to `inset + width` metres
+ * inside the edge, lifted a few millimetres so it wins the depth test. Lane paint is what tells a
+ * driver where the road ends before the kerb does, and a flat strip that follows the banking is the
+ * only geometry that can do it without floating on a crest or sinking in a dip.
+ */
+export function buildEdgeLine(
+  scene: Scene,
+  nodes: readonly TrackNode[],
+  side: 1 | -1,
+  inset: number,
+  width: number,
+  name: string,
+): Mesh | null {
+  const count = nodes.length;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const node = nodes[index]!;
+    const { nx, nz } = frameAt(nodes, index);
+    const half = node.width * 0.5;
+    const outer = half - inset;
+    const inner = half - inset - width;
+    const liftOuter = Math.tan(node.banking) * outer * side;
+    const liftInner = Math.tan(node.banking) * inner * side;
+    positions.push(node.x + nx * side * outer, node.y + liftOuter + 0.012, node.z + nz * side * outer);
+    positions.push(node.x + nx * side * inner, node.y + liftInner + 0.012, node.z + nz * side * inner);
+    uvs.push(0, node.distance / 4, 1, node.distance / 4);
+  }
+  for (let index = 0; index < count; index += 1) {
+    const a = index * 2;
+    const b = a + 1;
+    const c = ((index + 1) % count) * 2;
+    const d = c + 1;
+    if (side === 1) indices.push(a, b, c, b, d, c);
+    else indices.push(a, c, b, b, c, d);
+  }
+  if (indices.length === 0) return null;
+  const mesh = new Mesh(name, scene);
+  const data = new VertexData();
+  data.positions = positions;
+  data.indices = indices;
+  data.uvs = uvs;
+  VertexData.ComputeNormals(positions, indices, normals);
+  data.normals = normals;
+  data.applyToMesh(mesh);
+  return mesh;
+}
+
+/**
  * Signed curvature at a node, in radians per node. Used to decide where kerbs and corner signage
  * belong, so that they mark real corners rather than being sprinkled evenly.
  */

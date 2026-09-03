@@ -1,0 +1,70 @@
+{
+  "note": "Color and lighting script per circuit. PRIMARY/SECONDARY/ACCENT/NEUTRAL/EMISSIVE follow the brief; the lighting block mirrors ThemeLightingZones in apps/web/render/LightingRig.ts and the hall spec in apps/web/render/Hall.ts, which are the sources of truth in code.",
+  "signature": {
+    "INK_MAGENTA": "#FF3DA6",
+    "PRESS_LIME": "#B9FF45",
+    "CYAN_SCREEN": "#65D8FF",
+    "PAPER": "#F7F2E8",
+    "INK_BLACK": "#12101A"
+  },
+  "tracks": {
+    "ink-print-factory": {
+      "theme": "PRINT_FACTORY",
+      "name": "Serigrafía",
+      "status": "golden standard",
+      "colors": {
+        "primary": "#575460",
+        "secondary": "#5B6274",
+        "accent": ["#65D8FF", "#FF3DA6", "#FFD43B", "#12101A"],
+        "neutral": "#3A3F49",
+        "emissive": ["#FF7A2E", "#B48CFF", "#EEF0FF", "#FFD43B"]
+      },
+      "lighting": {
+        "timeOfDay": "interior, shift in progress",
+        "keyLight": { "direction": [-0.45, -0.82, 0.36], "elevationDeg": 55, "intensity": "2.45-2.95 by zone" },
+        "fill": "cool grey-blue hemispheric, 0.82-0.90",
+        "ambient": "procedural IBL 0.66-0.92 by zone",
+        "fog": "exp2 0.00088-0.0019, tinted per zone",
+        "emissive": "skylights, high-bay pendants every 16 m, heater strips, UV bed, screens, ink lines",
+        "contrast": 0.96,
+        "exposure": "1.04-1.14 by zone",
+        "landmarkLights": ["carousel point light 900 @ 9 m", "dryer point light 700 orange", "exposure UV point light pulsing"]
+      },
+      "zones": [
+        { "sector": 1, "name": "Diseño", "key": "#FFF3E2", "fill": "#A4ADC2", "fog": "#8F90AA", "exposure": 1.14 },
+        { "sector": 2, "name": "Pantallas", "key": "#E4EEFF", "fill": "#8E93B4", "fog": "#7C7FA4", "exposure": 1.08 },
+        { "sector": 3, "name": "Tinta", "key": "#FFE4F4", "fill": "#9D82D6", "fog": "#8A70B2", "exposure": 1.06 },
+        { "sector": 4, "name": "Secado", "key": "#FFB36A", "fill": "#FF8D4D", "fog": "#B2622A", "exposure": 1.04 },
+        { "sector": 5, "name": "Control", "key": "#EAF5FF", "fill": "#A3B6CA", "fog": "#8C9DB2", "exposure": 1.14 }
+      ]
+    },
+    "tshirt-megastore": {
+      "theme": "FLAGSHIP",
+      "name": "Tienda",
+      "status": "standard applied (hall, barrier, signage); authored set pending",
+      "colors": { "primary": "#E8DFD0", "secondary": "#C98A52", "accent": ["#FF3DA6", "#B9FF45", "#65D8FF"], "neutral": "#6E6259", "emissive": ["#FFE9C4", "#FFF3DC"] },
+      "lighting": { "timeOfDay": "retail daytime", "keyLight": "4200 K warm", "fill": "6500 K", "exposure": "1.04-1.25", "emissive": "ceiling coffers, warm pendants, window band" }
+    },
+    "warehouse-express": {
+      "theme": "WAREHOUSE",
+      "name": "Almacén",
+      "status": "standard applied; authored set pending",
+      "colors": { "primary": "#5A6068", "secondary": "#B98A57", "accent": ["#FFC02E", "#3E6E9E"], "neutral": "#4A4E54", "emissive": ["#F4F8FF", "#EEF4FF"] },
+      "lighting": { "timeOfDay": "industrial daylight", "keyLight": "5600 K", "fill": "7500 K at the dock", "exposure": "1.04-1.27", "emissive": "skylights, LED battens, dock doors" }
+    },
+    "office-chaos": {
+      "theme": "OFFICE",
+      "name": "Oficinas",
+      "status": "standard applied; authored set pending",
+      "colors": { "primary": "#E6E1D8", "secondary": "#A2764B", "accent": ["#65D8FF", "#B9FF45"], "neutral": "#8C8378", "emissive": ["#F7FBFF", "#65D8FF"] },
+      "lighting": { "timeOfDay": "office daytime", "keyLight": "4000 K fluorescent", "fill": "6500 K window", "exposure": "1.04-1.21", "emissive": "ceiling tiles, monitors, glass curtain wall" }
+    },
+    "manga-mega-con": {
+      "theme": "MANGA",
+      "name": "Salón Manga",
+      "status": "standard applied; authored set pending",
+      "colors": { "primary": "#1B1630", "secondary": "#FF3DA6", "accent": ["#8F5CFF", "#65D8FF", "#FFD43B"], "neutral": "#252036", "emissive": ["#FF3DA6", "#65D8FF", "#8F5CFF"] },
+      "lighting": { "timeOfDay": "night hall, practicals only", "keyLight": "white spots 2.15-2.69", "fill": "neon violet/cyan", "exposure": "1.06-1.23", "emissive": "LED battens, banners, screens, neon barrier band" }
+    }
+  }
+}
