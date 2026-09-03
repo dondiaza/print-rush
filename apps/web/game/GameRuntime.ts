@@ -12,6 +12,7 @@ import {
 import {
   ItemDefinitions,
   SeededRandom,
+  RaceConfig,
   VehicleConfig,
   advanceRaceProgress,
   applyBoost,
@@ -42,7 +43,7 @@ import {
 import type { CharacterDefinition, KartDefinition } from "@print-rush/3d-factory";
 import { CharacterPresets, KartPresets } from "@print-rush/3d-factory";
 import { buildTrack, visualsForTheme, type BuiltTrack } from "./TrackBuilder";
-import { BotDriver, BotSkills } from "./BotDriver";
+import { BotDriver, botSkillsForGrid } from "./BotDriver";
 import { InputControllerV5, type TouchState } from "./InputControllerV5";
 import { ItemManager, type ItemTarget } from "./ItemManager";
 import { AudioDirector } from "@/render/AudioDirector";
@@ -86,6 +87,8 @@ export type HudState = {
   driftLevel: number;
   /** Which camera is live, so the view button can label itself with what it will switch *to*. */
   view: CameraView;
+  /** How many karts are racing, so the HUD's "3 / 8" does not have the field size hard-coded. */
+  gridSize: number;
   hasItem: boolean;
   itemName: string | null;
   /** The held item's id, for the HUD's icon lookup. Null when empty-handed. */
@@ -243,6 +246,18 @@ type Racer = {
   driver: BotDriver | null;
 };
 
+/**
+ * Rival liveries, one entry per grid slot.
+ *
+ * As long as `RaceConfig.maxGridSize` so that raising the field never falls through to a default and
+ * produces a row of identical karts. Wrapped with a modulo rather than clamped, so an experiment with
+ * a larger grid still gets a varied field instead of throwing.
+ */
+const BOT_BODY = ["#4db7ff", "#ff7b2f", "#8f5cff", "#ffd43b", "#65d8ff", "#b9ff45", "#ff6f91", "#7dffef", "#ffa63d", "#c08bff", "#5ad1a5"] as const;
+const BOT_ACCENT = ["#ffdd45", "#7dffef", "#f7f2e8", "#2b2732", "#ff3da6", "#17141b", "#b9ff45", "#ff7b2f", "#4db7ff", "#ffd43b", "#8f5cff"] as const;
+const BOT_SHIRT = ["#f7f2e8", "#17141b", "#f7f2e8", "#2b2732", "#f7f2e8", "#17141b", "#f7f2e8", "#2b2732", "#f7f2e8", "#17141b", "#f7f2e8"] as const;
+const BOT_SKIN = ["#efb087", "#70462e", "#efb087", "#c98a52", "#8d5524", "#efb087", "#5c3a21", "#c98a52", "#efb087", "#70462e", "#d99b72"] as const;
+
 /** 120 Hz simulation. Doubling V4's rate makes wall response and drift entry far more consistent. */
 const FIXED_STEP = 1 / 120;
 const MAX_STEPS = 10;
@@ -363,24 +378,42 @@ export class GameRuntime {
     this.racers.push(this.player);
 
     // ---------------------------------------------------------------- opponents
-    BotSkills.forEach((skill, index) => {
+    /**
+     * The field, sized by `RaceConfig.gridSize` rather than by the length of a hand-written array.
+     *
+     * The colour tables below are as long as `maxGridSize`, so raising the grid does not silently
+     * fall through to a default and produce a row of identical blue karts — which is what the old
+     * `["#4db7ff", "#ff7b2f", "#8f5cff"][index] ?? "#4db7ff"` did the moment a fourth bot existed.
+     *
+     * Bot quality is one tier below the player's and never above MEDIUM. A bot costs 29 draw calls
+     * even at LOW (see `budget.test.ts`, which prints the figures), and with a field of eight the
+     * opponents alone are the largest single item in the frame's budget.
+     */
+    const skills = botSkillsForGrid(RaceConfig.gridSize);
+    skills.forEach((skill, index) => {
       const botSpawn = baked.definition.spawnPoints[index + 1] ?? spawn;
       const botKart = KartPresets[(index + 1) % KartPresets.length]!;
       const visual = createKart(this.scene, `bot-${index}`, {
-        body: Color3.FromHexString(["#4db7ff", "#ff7b2f", "#8f5cff"][index] ?? "#4db7ff"),
-        accent: Color3.FromHexString(["#ffdd45", "#7dffef", "#f7f2e8"][index] ?? "#ffdd45"),
-        shirt: Color3.FromHexString(index === 1 ? "#17141b" : "#f7f2e8"),
-        skin: Color3.FromHexString(index === 2 ? "#70462e" : "#efb087"),
+        body: Color3.FromHexString(BOT_BODY[index % BOT_BODY.length]!),
+        accent: Color3.FromHexString(BOT_ACCENT[index % BOT_ACCENT.length]!),
+        shirt: Color3.FromHexString(BOT_SHIRT[index % BOT_SHIRT.length]!),
+        skin: Color3.FromHexString(BOT_SKIN[index % BOT_SKIN.length]!),
       }, true, {
         character: CharacterPresets[(index + 1) % CharacterPresets.length]!,
         kart: botKart,
         quality: quality === "HIGH" || quality === "ULTRA" ? "MEDIUM" : "LOW",
-        // Preloaded alongside the player's, so the grid is four distinct karts.
+        // Preloaded alongside the player's, so the grid is a set of distinct karts.
         wrap: catalog?.wrapTexture(botKart.livery ?? "NONE") ?? null,
       });
-      // Only the player casts into the shadow map on lower tiers; four full karts of casters was one
-      // of the measured problems with the V4 scene.
-      if (quality === "HIGH" || quality === "ULTRA") {
+      /**
+       * Shadow casters, and only for the nearest of the field.
+       *
+       * Every caster is another pass over the shadow map, and a full grid of them was one of the
+       * measured problems with the V4 scene. The three karts that start beside and immediately behind
+       * the player are the ones whose shadows a player can actually see fall across the track; the
+       * rest are lit but do not cast.
+       */
+      if ((quality === "HIGH" || quality === "ULTRA") && index < 3) {
         visual.getChildMeshes().forEach((mesh) => this.track.lighting.addShadowCaster(mesh));
       }
       // Seeded per slot so a race replays identically rather than depending on Math.random.
@@ -445,9 +478,16 @@ export class GameRuntime {
 
     if (catalog) {
       const theme = options.trackDefinition.baked.blueprint.theme;
+      /**
+       * Every livery the grid will ask for, so none of them downloads mid-race.
+       *
+       * Derived from the grid size rather than from the opponent list, because the two must cover the
+       * same slots and the preload runs before the opponents are built. Deduplication happens in
+       * `assetIdsForRace`; with five kart presets and eight slots the same wrap is requested twice.
+       */
       const liveries = [
         options.kartDefinition.livery ?? "NONE",
-        ...BotSkills.map((_skill, index) => KartPresets[(index + 1) % KartPresets.length]!.livery ?? "NONE"),
+        ...Array.from({ length: RaceConfig.gridSize - 1 }, (_, index) => KartPresets[(index + 1) % KartPresets.length]!.livery ?? "NONE"),
       ];
       const ids = assetIdsForRace(catalog, theme, liveries);
       await catalog.preload(scene, ids, (loaded, total, id) => {
@@ -1158,6 +1198,7 @@ export class GameRuntime {
       driftCharge: kart.driftCharge,
       driftLevel: kart.driftLevel,
       view: this.camera.getView(),
+      gridSize: this.racers.length,
       hasItem: this.heldItem !== null,
       itemName: this.heldItem?.name ?? null,
       itemId: this.heldItem?.id ?? null,

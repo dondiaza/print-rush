@@ -25,6 +25,7 @@ const INITIAL_HUD: HudState = {
   timeMs: 0,
   driftCharge: 0,
   view: "CHASE",
+  gridSize: 8,
   driftLevel: 0,
   hasItem: false,
   itemName: null,
@@ -32,7 +33,7 @@ const INITIAL_HUD: HudState = {
   countdown: 3,
   banner: null,
   playerProgress: 0,
-  botProgress: [0, 0, 0],
+  botProgress: [],
   phase: "GRID",
   trackName: "PRINT RUSH",
   sector: 1,
@@ -313,7 +314,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         <>
           <div className="connection-note">V4 · LOCAL 60 HZ · {hud.trackName.toUpperCase()}</div>
           <div className={`hud ${hud.shuffled ? "hud-shuffled" : ""}`} aria-live="polite">
-            <div className="hud-position"><Icon name="ui_position" size={15} label="Posición" />{hud.position}<span>/4</span></div>
+            <div className="hud-position"><Icon name="ui_position" size={15} label="Posición" />{hud.position}<span>/{hud.gridSize}</span></div>
             <div className="hud-top-center">
               <div className={`hud-lap ${hud.lastLap ? "final" : ""}`}><Icon name="ui_lap" size={16} label="Vuelta" />{hud.lastLap ? "FINAL " : "LAP "}{hud.lap} / {hud.laps}</div>
               <div className="hud-time"><Icon name="ui_timer" size={16} label="Tiempo" />{formatTime(hud.timeMs)}</div>

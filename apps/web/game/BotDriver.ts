@@ -1,4 +1,5 @@
 import {
+  RaceConfig,
   VehicleConfig,
   sanitizeInput,
   type GameInput,
@@ -59,12 +60,65 @@ export const BotPersonalities: Record<BotPersonality, Omit<BotSkill, "laneOffset
   CHAOTIC: { personality: "CHAOTIC", level: 0.83, reaction: 0.1, driftAppetite: 0.8, aggression: 0.7, shortcutAppetite: 0.6, jitter: 0.075 },
 };
 
-/** The three opponents on the grid. Deliberately different personalities, not three difficulties. */
-export const BotSkills: readonly BotSkill[] = [
-  { ...BotPersonalities.TECHNICAL, laneOffset: -1.4 },
-  { ...BotPersonalities.AGGRESSIVE, laneOffset: 1.8 },
-  { ...BotPersonalities.CHAOTIC, laneOffset: -2.6 },
-];
+/**
+ * The opponents on the grid.
+ *
+ * There used to be exactly three of these, written out by hand, and that was one of five places the
+ * number four was hard-coded. Generated now from `RaceConfig.gridSize`, so the size of the field is
+ * one decision rather than five that have to be kept in agreement.
+ *
+ * Two properties the generation has to preserve.
+ *
+ * **Personalities, not difficulties.** All five archetypes are on the grid now, ordered fastest
+ * first so the field lines up by ability: the technical one is quickest through a corner and takes
+ * the skill shortcuts, the aggressive one defends and dives, the chaotic one is occasionally
+ * brilliant and frequently sideways, the balanced one is the yardstick, the cautious one holds the
+ * line and loses time. Two of the five were written, tuned and tested and then never raced, because
+ * the hand-written grid only had room for three. Cycling through all of them is what makes a field
+ * of eight a field rather than seven copies of one driver at seven speeds.
+ *
+ * **A spread of racing lines.** `laneOffset` is what stops the field driving nose to tail down one
+ * groove: each bot commits to its own line, so the pack fans out through a corner. The offsets
+ * alternate side to side and widen down the order, which also puts the cars starting at the back on
+ * the wider lines — the arrangement that produces overtaking rather than a train.
+ *
+ * Derived, not random: the same grid size produces the same field every time, which is what keeps a
+ * race reproducible for a test and for a replay.
+ */
+export function botSkillsForGrid(gridSize: number): BotSkill[] {
+  // Fastest first: the grid is set by ability, so slot one is the quickest bot and the back of the
+  // field is where the cautious driver starts.
+  const archetypes = [
+    BotPersonalities.TECHNICAL,
+    BotPersonalities.AGGRESSIVE,
+    BotPersonalities.CHAOTIC,
+    BotPersonalities.BALANCED,
+    BotPersonalities.CAUTIOUS,
+  ] as const;
+  return Array.from({ length: Math.max(0, gridSize - 1) }, (_, index) => {
+    const base = archetypes[index % archetypes.length]!;
+    // Alternating sides, widening down the grid, capped so nobody's line starts off the tarmac.
+    const side = index % 2 === 0 ? -1 : 1;
+    const laneOffset = side * Math.min(3.4, 1.4 + Math.floor(index / 2) * 0.62);
+    /**
+     * A slight competence gradient down the order, on top of the archetype.
+     *
+     * Three points of `level` per cycle — small, because the archetype is meant to be the character
+     * of the driver and this is only a tie-breaker. Without it, every third bot is identical to the
+     * one three places ahead, which shows up as two karts glued together for a whole lap.
+     */
+    const decay = Math.floor(index / archetypes.length) * 0.03;
+    return {
+      ...base,
+      level: Math.max(0.68, base.level - decay),
+      jitter: base.jitter + decay * 0.4,
+      laneOffset,
+    };
+  });
+}
+
+/** The field for the configured grid size. */
+export const BotSkills: readonly BotSkill[] = botSkillsForGrid(RaceConfig.gridSize);
 
 /** Metres of track looked at when judging how fast the next corner can be taken. */
 const SCAN_METRES = 90;

@@ -1,4 +1,5 @@
 import {
+  RaceConfig,
   createKartState,
   getCircuit,
   resolveGround,
@@ -8,7 +9,7 @@ import {
   type KartState,
 } from "@print-rush/game-core";
 import { describe, expect, it } from "vitest";
-import { BotDriver, BotPersonalities, BotSkills, type BotPersonality } from "@/game/BotDriver";
+import { BotDriver, BotPersonalities, BotSkills, botSkillsForGrid, type BotPersonality } from "@/game/BotDriver";
 
 /**
  * Bot driving.
@@ -76,10 +77,43 @@ function race(personality: BotPersonality, seconds: number, seed = 1) {
 }
 
 describe("bot personalities", () => {
-  it("defines all five and puts three distinct ones on the grid", () => {
+  it("races all five archetypes and never two identical drivers", () => {
+    /**
+     * This assertion changed shape when the grid grew, and the new form is the stronger one.
+     *
+     * It used to require every bot on the grid to have a *different* personality, which was
+     * satisfiable only because there were exactly three bots and three archetypes in use — and it
+     * quietly permitted the other two personalities to be written, tuned, tested and never raced.
+     *
+     * With a field of eight, personalities necessarily repeat. What must not repeat is a *driver*: two
+     * bots with the same archetype have to differ in the dials that decide how they race, or they
+     * drive glued together for the whole lap. So the test now demands both that all five archetypes
+     * appear and that no two entries on the grid are the same combination.
+     */
     expect(Object.keys(BotPersonalities)).toHaveLength(5);
     const onGrid = BotSkills.map((skill) => skill.personality);
-    expect(new Set(onGrid).size).toBe(BotSkills.length);
+    expect(new Set(onGrid).size).toBe(5);
+
+    const signatures = BotSkills.map((skill) => `${skill.personality}|${skill.level}|${skill.jitter}|${skill.laneOffset}`);
+    expect(new Set(signatures).size).toBe(BotSkills.length);
+  });
+
+  it("spreads the field across the road rather than down one groove", () => {
+    // `laneOffset` is what makes a pack fan out through a corner. Both sides of the racing line have
+    // to be used, and no bot's line may start off the tarmac — the narrowest circuit's road is 10 m,
+    // so half of it is 5 m.
+    const offsets = BotSkills.map((skill) => skill.laneOffset);
+    expect(offsets.some((offset) => offset < 0)).toBe(true);
+    expect(offsets.some((offset) => offset > 0)).toBe(true);
+    expect(Math.max(...offsets.map(Math.abs))).toBeLessThan(4);
+  });
+
+  it("builds the field from the configured grid size", () => {
+    // The number four used to be hard-coded in five places. This is the one that matters: the
+    // opponent list must be exactly one short of the grid, or the player has no slot or a spare one.
+    expect(BotSkills).toHaveLength(RaceConfig.gridSize - 1);
+    expect(botSkillsForGrid(12)).toHaveLength(11);
+    expect(botSkillsForGrid(1)).toHaveLength(0);
   });
 
   it("gives every personality a different combination of dials", () => {

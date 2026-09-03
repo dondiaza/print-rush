@@ -1,5 +1,6 @@
 import { NullEngine, Scene } from "@babylonjs/core";
 import { CharacterPresets, KartPresets } from "@print-rush/3d-factory";
+import { RaceConfig } from "@print-rush/game-core";
 import { describe, expect, it } from "vitest";
 import { buildKart } from "@/render/KartBuilder";
 import { buildCharacter } from "@/render/CharacterBuilder";
@@ -92,33 +93,79 @@ describe("character budget", () => {
 });
 
 describe("full grid budget", () => {
-  it("keeps four karts with drivers inside a sane total", () => {
+  /**
+   * What a whole field costs, measured rather than assumed.
+   *
+   * This is the assertion that decided the size of the grid. The field went from four karts to
+   * eight, and the question "can it be twelve" has a numeric answer that nothing else in the project
+   * could give: a kart and its driver cost 29 draw calls even at the lowest tier, so eleven
+   * opponents would be over three hundred draw calls before a single piece of the world is drawn.
+   * There is no browser in this environment to profile that in, so the field is the size the
+   * measured budget supports and this test is where that budget lives.
+   *
+   * It prints the figures as well as asserting them, so the cost of adding "just one more detail" to
+   * a kart shows up in the test output rather than in a frame rate nobody is watching.
+   */
+  const build = (scene: Scene, quality: "HIGH" | "MEDIUM" | "LOW", name: string) => {
+    const kart = buildKart(scene, KartPresets[0]!, `grid-${name}`, quality);
+    const driver = buildCharacter(scene, CharacterPresets[0]!, `grid-${name}-driver`, { pose: "DRIVING", quality });
+    let triangles = 0;
+    let drawCalls = 0;
+    for (const part of [measure(scene, kart.root), measure(scene, driver.root)]) {
+      triangles += part.triangles;
+      drawCalls += part.drawCalls;
+    }
+    return { triangles, drawCalls };
+  };
+
+  /** The grid the runtime actually builds: the player one tier above the opponents. */
+  const measureGrid = (size: number, botQuality: "MEDIUM" | "LOW") => {
     const scene = new Scene(new NullEngine());
     let triangles = 0;
     let drawCalls = 0;
-
-    // The player at full detail, three opponents at the reduced tier the runtime actually uses.
-    const grid: Array<["HIGH" | "MEDIUM", string]> = [
-      ["HIGH", "player"],
-      ["MEDIUM", "bot-0"],
-      ["MEDIUM", "bot-1"],
-      ["MEDIUM", "bot-2"],
-    ];
-    for (const [quality, name] of grid) {
-      const kart = buildKart(scene, KartPresets[0]!, `grid-${name}`, quality);
-      const driver = buildCharacter(scene, CharacterPresets[0]!, `grid-${name}-driver`, {
-        pose: "DRIVING",
-        quality,
-      });
-      for (const part of [measure(scene, kart.root), measure(scene, driver.root)]) {
-        triangles += part.triangles;
-        drawCalls += part.drawCalls;
-      }
+    for (let slot = 0; slot < size; slot += 1) {
+      const part = build(scene, slot === 0 ? "HIGH" : botQuality, `${botQuality}-${size}-${slot}`);
+      triangles += part.triangles;
+      drawCalls += part.drawCalls;
     }
+    return { triangles, drawCalls };
+  };
 
-    console.log(`full grid: ${triangles.toLocaleString("en-GB")} triangles, ${drawCalls} draw calls`);
-    // Karts and drivers are the foreground; the environment needs the rest of the frame budget.
-    expect(triangles).toBeLessThan(70_000);
-    expect(drawCalls).toBeLessThan(140);
+  it("keeps the configured field inside the frame's budget", () => {
+    const desktop = measureGrid(RaceConfig.gridSize, "MEDIUM");
+    const mobile = measureGrid(RaceConfig.gridSize, "LOW");
+
+    console.table([
+      { grid: `${RaceConfig.gridSize} · bots MEDIUM`, triangles: desktop.triangles, drawCalls: desktop.drawCalls },
+      { grid: `${RaceConfig.gridSize} · bots LOW`, triangles: mobile.triangles, drawCalls: mobile.drawCalls },
+    ]);
+
+    /**
+     * The ceilings, and where they come from.
+     *
+     * Triangles are cheap and plentiful: a modern integrated GPU does not notice a hundred thousand
+     * of them. Draw calls are the real constraint on the web, where every one is a JavaScript-to-GL
+     * boundary crossing, so that is the number with the tight bound. Two hundred and sixty leaves
+     * room for the road, the terrain, the barriers, the props, the crowd and the posters — which
+     * `assets.test.ts` budgets separately — inside a frame a phone can hold at 30 fps.
+     */
+    expect(desktop.triangles).toBeLessThan(140_000);
+    expect(desktop.drawCalls).toBeLessThan(260);
+    // The lowest tier has to be genuinely cheaper, not merely labelled so.
+    expect(mobile.drawCalls).toBeLessThanOrEqual(desktop.drawCalls);
+    expect(mobile.triangles).toBeLessThan(desktop.triangles);
+  });
+
+  it("shows why the grid is not twelve", () => {
+    /**
+     * Not an aspiration — a measurement, kept so the decision is reviewable.
+     *
+     * If a future change makes a distant bot cheap enough (instancing, a merged low-detail mesh, a
+     * billboard past thirty metres) this assertion is where that shows up: it fails, and the grid can
+     * be raised. Until then it documents the cost in the one place that cannot go stale.
+     */
+    const full = measureGrid(RaceConfig.maxGridSize, "LOW");
+    console.log(`a field of ${RaceConfig.maxGridSize}: ${full.triangles.toLocaleString("en-GB")} triangles, ${full.drawCalls} draw calls`);
+    expect(full.drawCalls).toBeGreaterThan(260);
   });
 });

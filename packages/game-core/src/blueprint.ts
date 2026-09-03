@@ -1,4 +1,4 @@
-import type { SurfaceName } from "./config.js";
+import { RaceConfig, type SurfaceName } from "./config.js";
 import { headingDeltas, measureLength } from "./track.js";
 import type { TrackCheckpoint, TrackDefinition, TrackNode, Vec3 } from "./types.js";
 
@@ -304,9 +304,24 @@ function buildDefinition(blueprint: TrackBlueprint, nodes: TrackNode[], lengthMe
   const startRotation = headingAt(0);
   const forward = { x: Math.sin(startRotation), z: Math.cos(startRotation) };
   const normal = { x: -forward.z, z: forward.x };
-  const spawnPoints = [0, 1, 2, 3].map((slot) => {
+  /**
+   * The starting grid: two columns, staggered, `maxGridSize` slots deep.
+   *
+   * Two columns rather than a single file because that is what a grid looks like, and because a
+   * twelve-kart single file would stretch sixty metres back down the road — past the start straight
+   * on some circuits and into a corner.
+   *
+   * The lane offset is a *fraction of the road's width at the line*, not a fixed number of metres.
+   * The circuits range from ten metres wide to twenty, and a fixed offset that sits nicely on the
+   * warehouse's loading dock puts two karts of the megastore's grid on the verge.
+   *
+   * Rows are five metres apart. A kart is 2.9 m long, so that is a car's length of clear air — enough
+   * that nobody starts inside the kart in front, and tight enough that the field is a pack rather
+   * than a queue.
+   */
+  const spawnPoints = Array.from({ length: RaceConfig.maxGridSize }, (_, slot) => {
     const row = Math.floor(slot / 2);
-    const lane = (slot % 2 === 0 ? -1 : 1) * start.width * 0.18;
+    const lane = (slot % 2 === 0 ? -1 : 1) * start.width * 0.19;
     const behind = 4 + row * 5;
     return {
       position: {

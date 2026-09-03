@@ -207,6 +207,32 @@ export type SurfaceName = keyof typeof SurfaceConfig;
  * where you cannot put a wheel on the dirt is missing most of its texture, so the road now has a
  * verge you can drive on, at a real cost in grip, and a limit past which you are put back.
  */
+/**
+ * The size of the field.
+ *
+ * Four was hard-coded in five places at once — a three-entry `BotSkills` array, a four-slot spawn
+ * generator, two three-entry colour arrays in the runtime and a literal `/4` in the HUD — so
+ * changing it meant changing all five and nothing enforced that they agreed.
+ *
+ * Eight rather than twelve, and the reason is measured rather than aesthetic. A bot costs 29 draw
+ * calls even at the lowest quality tier (kart 14, driver 15 — see `budget.test.ts`, which prints the
+ * figures). Eleven of them would be over three hundred draw calls before the world is drawn at all,
+ * and there is no browser in this environment to profile that in. Eight is a real field that the
+ * measured budget supports; the spawn grid is generated for twelve so the data is ready when the
+ * cost of a distant bot has been brought down.
+ */
+export const RaceConfig = Object.freeze({
+  /** Karts on the grid, the player included. */
+  gridSize: 8,
+  /**
+   * How many spawn slots every circuit provides.
+   *
+   * Larger than `gridSize` on purpose: the grid is a property of the *circuit data*, so raising the
+   * field later must not require rebaking every track.
+   */
+  maxGridSize: 12,
+});
+
 export const TerrainConfig = Object.freeze({
   /**
    * How far past the road edge the drivable verge extends, in metres.
