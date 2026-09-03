@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AllowedLaps } from "@print-rush/game-core";
 import { GameRuntime, type HudState, type LoadProgress, type RaceResult } from "@/game/GameRuntime";
-import { loadActiveKart } from "@/factory/storage";
 import { resolveRaceCharacter } from "@/characters/race";
 import { loadActiveTrack } from "@/factory/TrackFactory";
+import { TrackMap, type TrackMarker } from "./TrackMap";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
 import { Icon, iconForItem } from "@/ui/IconAtlas";
 
@@ -59,6 +59,15 @@ const INITIAL_HUD: HudState = {
 };
 
 /**
+ * Rival colours, in grid order.
+ *
+ * The same list `GameRuntime` paints the bot karts with. Duplicated deliberately rather than
+ * imported: the runtime's copy is `Color3` instances for Babylon, this one is CSS, and a shared
+ * constant would have to be converted in one direction or the other on every frame.
+ */
+const BOT_COLORS = ["#4db7ff", "#ff7b2f", "#8f5cff", "#ffd43b", "#65d8ff", "#b9ff45", "#ff6f91", "#7dffef", "#ffa63d", "#c08bff", "#5ad1a5"] as const;
+
+/**
  * How far along the load is, 0..1.
  *
  * Returns 0 rather than 1 for an empty total: before the manifest is read there is nothing to
@@ -91,6 +100,32 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
   // The debug panel reads the latest HUD without forcing a re-render of the race UI.
   const hudRef = useRef<HudState | null>(null);
 
+  /**
+   * The centreline the minimap draws, read once.
+   *
+   * `loadActiveTrack()` reads and re-bakes from local storage, and this component re-renders on every
+   * HUD frame — sixty times a second. Memoising with no dependencies is right here because the track
+   * cannot change during a race: the runtime was handed this same definition when it was created.
+   */
+  const trackNodes = useMemo(() => loadActiveTrack().baked.definition.nodes, []);
+
+  /**
+   * Who to draw on the map.
+   *
+   * The player last so they are painted over the field, and larger, because the one thing this has
+   * to answer at a glance is "where am I". Rival colours match the karts they were built with in
+   * `GameRuntime`, so a blue dot is the blue kart.
+   */
+  const markers = useMemo<TrackMarker[]>(() => [
+    ...hud.botProgress.map((progress, index) => ({
+      progress,
+      color: BOT_COLORS[index % BOT_COLORS.length]!,
+      radius: 3.4,
+      label: `bot-${index}`,
+    })),
+    { progress: hud.playerProgress, color: "#ff3da6", radius: 5, label: "player" },
+  ], [hud.botProgress, hud.playerProgress]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -111,7 +146,25 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
     void resolveRaceCharacter().then((driver) => {
       if (!active) return null;
       onProgress({ loaded: 0, total: 1, label: "Preparando piloto" });
-      return GameRuntime.create(canvas, { laps, muted, onHud, onFinish, onProgress, character: driver.definition, kartDefinition: loadActiveKart(), trackDefinition: loadActiveTrack() });
+      /**
+       * Everything about the driver comes from the one resolution.
+       *
+       * `kartDefinition` used to be `loadActiveKart()` — local storage — while the character came
+       * from the studio, so the kart shown on the menu was routinely not the kart driven, and the
+       * studio's own kart choice was ignored entirely. Both now come off `driver`, which cannot
+       * disagree with itself.
+       */
+      return GameRuntime.create(canvas, {
+        laps,
+        muted,
+        onHud,
+        onFinish,
+        onProgress,
+        character: driver.definition,
+        faceTextureUrl: driver.faceTextureUrl,
+        kartDefinition: driver.kart,
+        trackDefinition: loadActiveTrack(),
+      });
     }).then((runtime) => {
       if (!runtime) return;
       if (!active) { runtime.dispose(); return; }
@@ -266,7 +319,12 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
               <div className="hud-time"><Icon name="ui_timer" size={16} label="Tiempo" />{formatTime(hud.timeMs)}</div>
               <div className="hud-sector">SECTOR {hud.sector} · {hud.surface}</div>
             </div>
-            <MiniMap player={hud.playerProgress} bots={hud.botProgress} />
+            {/* The real lap outline, from the baked centreline. See `TrackMap` for what this
+                replaced: a fixed ellipse with the dots placed by progress, identical on every
+                circuit, which could not be used to make a decision. */}
+            <div className="hud-minimap">
+              <TrackMap nodes={trackNodes} markers={markers} className="hud-minimap__svg" />
+            </div>
             <div className={`hud-item ${hud.hasItem ? "ready" : ""}`}>
               <b>
                 {hud.rouletteName
@@ -359,24 +417,6 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       )}
       <div className="orientation-overlay"><div><strong>GIRA TU DISPOSITIVO</strong><span>PRINT RUSH SE JUEGA EN HORIZONTAL</span></div></div>
     </main>
-  );
-}
-
-function MiniMap({ player, bots }: { player: number; bots: number[] }) {
-  const point = (progress: number) => {
-    const normalized = ((progress % 1) + 1) % 1;
-    const angle = -Math.PI / 2 + normalized * Math.PI * 2;
-    return { x: 70 + Math.cos(angle) * 48, y: 47 + Math.sin(angle) * 29 };
-  };
-  const playerPoint = point(player);
-  return (
-    <svg className="hud-minimap" viewBox="0 0 140 94" role="img" aria-label="Minimapa">
-      <ellipse cx="70" cy="47" rx="49" ry="30" fill="none" stroke="rgba(247,242,232,.3)" strokeWidth="8" />
-      <ellipse cx="70" cy="47" rx="49" ry="30" fill="none" stroke="#f7f2e8" strokeWidth="2" />
-      <line x1="65" y1="16" x2="75" y2="16" stroke="#b9ff45" strokeWidth="4" />
-      {bots.map((progress, index) => { const p = point(progress); return <circle key={index} cx={p.x} cy={p.y} r="3" fill={["#4db7ff", "#ff7b2f", "#8f5cff"][index]} />; })}
-      <circle cx={playerPoint.x} cy={playerPoint.y} r="5" fill="#ff3da6" stroke="#f7f2e8" strokeWidth="2" />
-    </svg>
   );
 }
 

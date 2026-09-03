@@ -3,6 +3,7 @@ import {
   Engine,
   Mesh,
   Scene,
+  Texture,
   SceneInstrumentation,
   StandardMaterial,
   TransformNode,
@@ -138,6 +139,16 @@ type GameRuntimeOptions = {
   onHud: (state: HudState) => void;
   onFinish: (result: RaceResult) => void;
   character: CharacterDefinition;
+  /**
+   * The player's styled face, as a URL, or null for the geometry's own colours.
+   *
+   * This was missing, and the whole face pipeline was dark because of it. The plumbing already ran
+   * from `createKart` down through `CharacterBuilder` — the material, the alpha, the projection — but
+   * nothing at the top ever handed it a texture, so a player who uploaded a photograph, cropped it and
+   * saved it saw their face in the studio and then raced as a generic driver. The brief is explicit
+   * that the custom face has to be visible *in the race*; this is the wire that was cut.
+   */
+  faceTextureUrl?: string | null;
   kartDefinition: KartDefinition;
   trackDefinition: StoredTrack;
   /**
@@ -320,6 +331,19 @@ export class GameRuntime {
     this.audio = new AudioDirector({ muted: options.muted, theme: baked.blueprint.theme });
 
     // ---------------------------------------------------------------- player
+    /**
+     * The face, loaded before the driver is built.
+     *
+     * `CharacterBuilder` decides its head material at construction time, so the texture has to exist
+     * by then — arriving late would mean rebuilding the mesh. A `Texture` that 404s resolves to a
+     * blank rather than throwing, and `CharacterBuilder` only uses it if it is truthy, so a broken
+     * URL costs the custom face and nothing else. That is the right failure: race without your face,
+     * never fail to race.
+     */
+    const faceTexture = options.faceTextureUrl
+      ? new Texture(options.faceTextureUrl, this.scene, { invertY: false })
+      : null;
+
     const spawn = baked.definition.spawnPoints[0]!;
     const playerVisual = createKart(this.scene, "player", {
       body: Color3.FromHexString(visuals.accentA),
@@ -331,6 +355,7 @@ export class GameRuntime {
       kart: options.kartDefinition,
       quality: quality === "LOW" ? "LOW" : quality === "MEDIUM" ? "MEDIUM" : "HIGH",
       wrap: catalog?.wrapTexture(options.kartDefinition.livery ?? "NONE") ?? null,
+      faceTexture,
     });
     playerVisual.getChildMeshes().forEach((mesh) => this.track.lighting.addShadowCaster(mesh));
 

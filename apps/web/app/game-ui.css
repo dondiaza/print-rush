@@ -1,0 +1,473 @@
+/*
+ * THE GAME INTERFACE.
+ *
+ * Kept in its own file rather than appended to `globals.css`, and the split is meaningful: that file
+ * dresses the *tools* — the character studio, the kart factory, the track editor, the handling lab —
+ * which are dense, panelled, information-first screens and should stay that way. This file dresses
+ * the *game*: the home, the sheets, the race HUD's own chrome. They are different products wearing
+ * the same brand, and mixing their rules is how a menu ends up looking like an admin console, which
+ * is precisely the complaint this round set out to fix.
+ *
+ * Everything here is composed from the tokens in `globals.css` (`--ink`, `--paper`, `--pink`,
+ * `--acid`, `--blue`, `--display`, `--sans`) plus the few added below. No new colour is invented in a
+ * rule body.
+ */
+
+:root {
+  /* Surfaces, from the page's ink upward. Three steps is enough to build depth and few enough that
+     a panel's level is always identifiable. */
+  --surface-0: #0b0b0f;
+  --surface-1: #14131b;
+  --surface-2: #1d1b26;
+  --edge: rgba(247, 242, 232, 0.11);
+  --edge-strong: rgba(247, 242, 232, 0.22);
+  --text-dim: rgba(247, 242, 232, 0.58);
+  --text-faint: rgba(247, 242, 232, 0.36);
+  /* One duration scale for the whole interface. The brief asks for 150–400 ms; anything slower reads
+     as sluggish on a screen a player passes through dozens of times. */
+  --t-fast: 130ms;
+  --t-base: 220ms;
+  --t-slow: 360ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ============================================================ BUTTON */
+
+.pr-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--sans);
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  white-space: nowrap;
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.pr-button:disabled { cursor: not-allowed; opacity: 0.42; }
+/* Only the pointer states lift. A disabled control that still animates reads as responsive when it
+   is not, which is worse than one that sits still. */
+.pr-button:not(:disabled):hover { transform: translateY(-1px); }
+.pr-button:not(:disabled):active { transform: translateY(1px); }
+
+.pr-button--sm { height: 34px; padding: 0 15px; font-size: 9px; }
+.pr-button--md { height: 44px; padding: 0 20px; font-size: 10px; }
+.pr-button--lg { height: 54px; padding: 0 28px; font-size: 12px; }
+/* The one action per screen that matters. Deliberately far larger than `lg` — the brief asks for the
+   primary to be "claramente superior al resto", and a 20% size difference does not read as hierarchy. */
+.pr-button--hero {
+  height: 74px;
+  padding: 0 clamp(38px, 7vw, 74px);
+  border-radius: 16px;
+  font: italic 30px/1 var(--display);
+  letter-spacing: 0.02em;
+}
+.pr-button--block { width: 100%; }
+
+.pr-button--primary {
+  background: linear-gradient(150deg, var(--pink), #c8218a);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(255, 61, 166, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.pr-button--primary:not(:disabled):hover {
+  background: linear-gradient(150deg, #ff62b8, var(--pink));
+  box-shadow: 0 14px 34px rgba(255, 61, 166, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.pr-button--secondary {
+  background: var(--surface-2);
+  color: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+.pr-button--secondary:not(:disabled):hover { background: #27242f; box-shadow: inset 0 0 0 1px var(--edge-strong); }
+
+.pr-button--ghost { background: transparent; color: var(--text-dim); }
+.pr-button--ghost:not(:disabled):hover { background: rgba(247, 242, 232, 0.07); color: var(--paper); }
+
+.pr-button--icon {
+  width: 44px;
+  padding: 0;
+  background: var(--surface-2);
+  color: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.pr-button__trailing, .pr-button__leading { font-size: 1.1em; line-height: 1; }
+.pr-button.is-loading .pr-button__label { opacity: 0.5; }
+.pr-button__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: pr-spin 620ms linear infinite;
+}
+@keyframes pr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .pr-button { transition: none; }
+  .pr-button:not(:disabled):hover, .pr-button:not(:disabled):active { transform: none; }
+  .pr-button__spinner { animation-duration: 2s; }
+}
+
+/* ============================================================ MENU TILE */
+
+.pr-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 15px 16px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.pr-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px var(--edge-strong), 0 12px 26px rgba(0, 0, 0, 0.42);
+}
+.pr-tile__glyph { color: var(--acid); font-size: 17px; line-height: 1; }
+.pr-tile__label { font-size: 9px; font-weight: 900; letter-spacing: 0.16em; color: var(--text-dim); }
+/* The value is the point of the tile, so it gets the weight. Truncated rather than wrapped: a
+   character called "Carlos de la Fuente" must not make one tile twice the height of its neighbours. */
+.pr-tile__value {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) { .pr-tile { transition: none; } .pr-tile:hover { transform: none; } }
+
+/* ============================================================ HOME */
+
+.home {
+  position: relative;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vh, 40px) clamp(16px, 4vw, 48px);
+  overflow: hidden;
+}
+
+/* Three layers of depth behind the stage, painted rather than modelled: a vertical wash, a warm
+   horizon glow, and a perspective grid that fades out before it reaches the content. This is what the
+   brief means by "profundidad mediante capas" — and it costs nothing on a phone. */
+.home__wash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 82% at 50% 8%, #2a1c33 0%, #15111c 46%, var(--surface-0) 78%);
+}
+.home__glow {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  width: min(1100px, 130%);
+  aspect-ratio: 2.4;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(255, 61, 166, 0.34), rgba(255, 61, 166, 0) 72%);
+  filter: blur(6px);
+}
+.home__grid {
+  position: absolute;
+  inset: 42% -20% -14%;
+  background-image:
+    linear-gradient(rgba(247, 242, 232, 0.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(247, 242, 232, 0.075) 1px, transparent 1px);
+  background-size: 58px 58px;
+  transform: perspective(520px) rotateX(64deg);
+  mask-image: linear-gradient(to top, #000 8%, transparent 72%);
+}
+
+.home__inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  /* The content is centred and capped. The old home let the hero run to the viewport edge, which is
+     what made a 27-inch screen look like a website and a laptop look cramped. */
+  max-width: 960px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 1.6vh, 20px);
+  animation: home-enter var(--t-slow) var(--ease) both;
+}
+@keyframes home-enter { from { opacity: 0; transform: translateY(14px); } }
+
+.home__wordmark {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.14em;
+  font: italic clamp(38px, 7vw, 76px) / 0.82 var(--display);
+  letter-spacing: -0.045em;
+}
+.home__wordmark span { color: var(--paper); }
+.home__wordmark strong { color: var(--pink); font-weight: inherit; }
+
+.home__stage {
+  position: relative;
+  width: 100%;
+  /* Given a fixed share of the viewport rather than a pixel height, so the loadout stays the largest
+     thing on screen on a laptop and does not overflow a phone in landscape. */
+  height: clamp(240px, 44vh, 460px);
+}
+.hero-stage, .hero-stage__canvas { width: 100%; height: 100%; display: block; }
+/* `touch-action: none` so a drag orbits the stage instead of scrolling the page. The page does not
+   scroll anyway, but on iOS the rubber-band would otherwise fight every gesture. */
+.hero-stage__canvas { touch-action: none; outline: none; }
+.hero-stage__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  margin: 0;
+  transform: translateX(-50%);
+  color: var(--text-faint);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.17em;
+  pointer-events: none;
+}
+.home__stage-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.home__identity { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.home__identity strong { font-size: clamp(17px, 2.6vw, 23px); font-weight: 900; letter-spacing: 0.04em; }
+.home__identity > span { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; font-weight: 900; letter-spacing: 0.16em; }
+/* Only rendered when the loadout is *not* the saved one — see `HomeScreen`. Amber rather than red:
+   racing with the local character is a degraded state, not an error. */
+.home__source { padding: 2px 6px; border-radius: 4px; background: rgba(255, 192, 46, 0.16); color: #ffc02e; font-size: 8px; font-style: normal; }
+
+.home__tiles {
+  width: 100%;
+  max-width: 680px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.home__footer { display: flex; gap: 8px; }
+
+@media (max-width: 720px) {
+  .home__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home__stage { height: clamp(200px, 34vh, 300px); }
+}
+/* Landscape on a phone: almost no vertical room, so the stage shrinks and the wordmark gets out of
+   the way rather than everything overflowing. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .home__stage { height: 40vh; }
+  .home__wordmark { font-size: 30px; }
+  .home__inner { gap: 6px; }
+}
+
+/* ============================================================ SHEET */
+
+/* The shared frame for every non-race screen: circuits, settings, briefing, results. One frame so
+   they are recognisably the same product, and centred so none of them read as a form. */
+.sheet {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 720px);
+  margin: 0 auto;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: clamp(18px, 4vh, 44px) clamp(16px, 4vw, 34px);
+  animation: home-enter var(--t-base) var(--ease) both;
+}
+.sheet--wide { width: min(100%, 1080px); }
+.sheet__head { display: flex; align-items: center; gap: 16px; }
+.sheet__head h2 { margin: 0; font: italic clamp(26px, 4vw, 44px) / 0.9 var(--display); letter-spacing: -0.03em; }
+.sheet__body { display: flex; flex-direction: column; gap: 22px; }
+.sheet__foot { margin-top: auto; display: flex; justify-content: center; }
+.sheet__foot--split { flex-wrap: wrap; gap: 10px; }
+
+/* ============================================================ FIELDS */
+
+.field { display: flex; flex-direction: column; gap: 9px; margin: 0; padding: 0; border: 0; }
+.field__label { color: var(--text-dim); font-size: 9px; font-weight: 900; letter-spacing: 0.17em; }
+.field__hint { margin: 0; color: var(--text-faint); font-size: 9px; font-weight: 900; letter-spacing: 0.13em; }
+.field__input {
+  height: 48px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--paper);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  min-width: 54px;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.chip.is-on { background: var(--paper); color: var(--ink); box-shadow: none; }
+
+.option-list { display: grid; gap: 7px; }
+.option {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.option b { min-width: 62px; font-size: 11px; font-weight: 900; letter-spacing: 0.14em; }
+.option span { color: var(--text-dim); font-size: 11px; }
+.option.is-on { background: rgba(185, 255, 69, 0.1); box-shadow: inset 0 0 0 1px var(--acid); }
+.option.is-on b { color: var(--acid); }
+
+/* ============================================================ TRACK MAP + CARDS */
+
+.track-map { width: 100%; height: 100%; display: block; overflow: visible; }
+
+.track-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  gap: 12px;
+}
+.track-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.track-card:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1px var(--edge-strong), 0 14px 30px rgba(0, 0, 0, 0.44); }
+.track-card.is-on { box-shadow: inset 0 0 0 2px var(--pink), 0 14px 30px rgba(255, 61, 166, 0.22); }
+.track-card__map { display: block; height: 118px; }
+.track-card__name { font-size: 14px; font-weight: 900; letter-spacing: 0.02em; }
+.track-card__theme { color: var(--text-faint); font-size: 8px; font-weight: 900; letter-spacing: 0.17em; }
+.track-card__stats { display: flex; gap: 12px; margin-top: 2px; }
+.track-card__stats i { display: flex; flex-direction: column; color: var(--text-faint); font-size: 7px; font-style: normal; font-weight: 900; letter-spacing: 0.13em; }
+.track-card__stats b { color: var(--acid); font-size: 13px; letter-spacing: 0; }
+@media (prefers-reduced-motion: reduce) { .track-card { transition: none; } .track-card:hover { transform: none; } }
+
+/* ============================================================ BRIEFING + RESULTS */
+
+.briefing__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.briefing__map { height: clamp(200px, 34vh, 320px); }
+.briefing__facts { display: flex; flex-direction: column; gap: 18px; }
+.briefing__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.briefing__metrics div { display: flex; flex-direction: column; gap: 2px; }
+.briefing__metrics b { font: italic 26px/1 var(--display); color: var(--acid); }
+.briefing__metrics span { color: var(--text-faint); font-size: 7px; font-weight: 900; letter-spacing: 0.14em; }
+@media (max-width: 760px) {
+  .briefing__grid { grid-template-columns: minmax(0, 1fr); }
+  .briefing__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.results { text-align: center; align-items: center; }
+.results .sheet__head { flex-direction: column; gap: 6px; }
+.results__position { font: italic clamp(64px, 13vw, 128px) / 0.8 var(--display); color: var(--pink); letter-spacing: -0.05em; }
+.results__stats { display: flex; justify-content: center; gap: clamp(18px, 5vw, 52px); flex-wrap: wrap; }
+.results__stats div { display: flex; flex-direction: column; gap: 4px; }
+.results__stats span { color: var(--text-faint); font-size: 8px; font-weight: 900; letter-spacing: 0.16em; }
+.results__stats strong { font-size: clamp(19px, 3vw, 27px); font-weight: 900; font-variant-numeric: tabular-nums; }
+
+/* The sector strip under the briefing's metrics. Re-authored here rather than left behind in
+   `globals.css`, where it shared a line with the deleted briefing panel — five equal columns became
+   a wrapping row, because at 1080px the old fixed five-up left each name three characters wide. */
+.sector-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.sector-list li { position: relative; min-height: 64px; padding: 10px; border-radius: 9px; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--edge); overflow: hidden; }
+.sector-list b { display: block; color: var(--text-faint); font: 17px/1 var(--display); }
+.sector-list span { display: block; margin-top: 7px; font-size: 8px; line-height: 1.35; letter-spacing: 0.07em; }
+/* The role stripe along the bottom. Coloured by `data-role` in `globals.css`, which is where the
+   role palette is defined for the track editor too. */
+.sector-list i { position: absolute; inset: auto 0 0; height: 3px; }
+
+/* ============================================================ MODAL + CONTROLS */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 4vh, 40px);
+  background: rgba(6, 6, 9, 0.78);
+  backdrop-filter: blur(9px);
+  animation: modal-in var(--t-base) var(--ease) both;
+}
+@keyframes modal-in { from { opacity: 0; } }
+.modal__panel {
+  width: min(100%, 720px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: clamp(20px, 4vh, 34px);
+  border-radius: 18px;
+  background: linear-gradient(170deg, var(--surface-2), var(--surface-0));
+  box-shadow: inset 0 0 0 1px var(--edge), 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+.controls-sheet { display: flex; flex-direction: column; gap: 20px; align-items: center; text-align: center; }
+.controls-sheet h2 { margin: 0; font: italic clamp(26px, 4vw, 40px) / 0.9 var(--display); letter-spacing: -0.03em; }
+.controls-sheet__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; width: 100%; text-align: left; }
+.controls-sheet h3 { margin: 0 0 10px; color: var(--acid); font-size: 9px; font-weight: 900; letter-spacing: 0.18em; }
+.controls-sheet dl { margin: 0; display: flex; flex-direction: column; gap: 9px; }
+.controls-sheet dl div { display: flex; flex-direction: column; gap: 2px; }
+.controls-sheet dt { font-size: 10px; font-weight: 900; letter-spacing: 0.11em; }
+.controls-sheet dd { margin: 0; color: var(--text-dim); font-size: 11px; line-height: 1.45; }
+.controls-sheet__tip { margin: 0; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
+@media (max-width: 640px) { .controls-sheet__columns { grid-template-columns: minmax(0, 1fr); } }
+
+/* ============================================================ ERROR */
+
+.pr-error { display: grid; place-items: center; min-height: 100svh; padding: clamp(18px, 5vh, 48px); background: var(--surface-0); }
+.pr-error__inner { width: min(100%, 520px); display: flex; flex-direction: column; gap: 16px; }
+.pr-error__eyebrow { color: var(--pink); font-size: 9px; font-weight: 900; letter-spacing: 0.19em; }
+.pr-error h2 { margin: 0; font: italic clamp(26px, 4vw, 42px) / 0.88 var(--display); letter-spacing: -0.03em; }
+.pr-error p { margin: 0; color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+.pr-error__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ============================================================ HUD MINIMAP */
+
+/* The frame around the map; the SVG itself is `TrackMap`. Sized in the HUD's own grid cell, so this
+   only has to give it a surface and a border. */
+.hud-minimap__svg { width: 100%; height: 100%; display: block; overflow: visible; }

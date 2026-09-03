@@ -14,7 +14,15 @@ import { animateKart, buildKart, type KartVisual } from "@/render/KartBuilder";
 export type KartPalette = { body: Color3; accent: Color3; shirt: Color3; skin: Color3 };
 export type KartCustomization = {
   kart: KartDefinition;
-  character: CharacterDefinition;
+  /**
+   * The driver, when there is one.
+   *
+   * Optional, because `withDriver` already decides whether a driver is built and the body of this
+   * function has always guarded on `withDriver && customization?.character`. Requiring it regardless
+   * meant a caller that genuinely wants an empty kart — the home's stage, where the driver stands
+   * beside it — had to invent a character it would immediately throw away.
+   */
+  character?: CharacterDefinition;
   quality?: RuntimeQuality;
   /** Baked livery texture for the bodywork. Null or absent paints it flat. */
   wrap?: Texture | null;

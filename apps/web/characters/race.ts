@@ -1,8 +1,8 @@
 "use client";
 
 import { FALLBACK_RUNTIME, type CharacterRuntime } from "@print-rush/character-core";
-import type { CharacterDefinition } from "@print-rush/3d-factory";
-import { loadActiveCharacter } from "@/factory/storage";
+import { KartPresets, type CharacterDefinition, type KartDefinition } from "@print-rush/3d-factory";
+import { loadActiveCharacter, loadActiveKart } from "@/factory/storage";
 import { getRuntime } from "./api";
 import { toDefinition } from "./bridge";
 
@@ -29,9 +29,38 @@ export type RaceCharacter = {
   definition: CharacterDefinition;
   /** The styled face texture, or null to use the geometry's own colours. */
   faceTextureUrl: string | null;
+  /**
+   * The kart, resolved from the same source as the driver.
+   *
+   * It is on this type rather than fetched separately, and that is the point. Before this, the home
+   * screen drew `loadActiveKart()` from local storage while the race drew whatever the studio
+   * character had chosen, so the kart on the menu was routinely not the kart you drove. Two calls
+   * that must agree are better expressed as one call that cannot disagree.
+   */
+  kart: KartDefinition;
   /** Where it came from, for the debug overlay and for an honest console line. */
   source: "STUDIO" | "LOCAL" | "FALLBACK";
 };
+
+/**
+ * The kart a saved character chose, or the locally selected one.
+ *
+ * `kartId` is a preset id and the presets are seeded, so the ids are stable across builds and a
+ * character saved months ago still resolves. An id that no longer exists — a preset removed, a row
+ * written by an older schema — falls through to the local choice rather than failing, because a
+ * missing kart must never be the reason a race does not start.
+ */
+function kartFor(kartId: string | null): KartDefinition {
+  if (kartId) {
+    const preset = KartPresets.find((entry) => entry.id === kartId);
+    if (preset) return preset;
+  }
+  try {
+    return loadActiveKart();
+  } catch {
+    return KartPresets[0]!;
+  }
+}
 
 function selectedId(): string | null {
   try {
@@ -59,6 +88,7 @@ export async function resolveRaceCharacter(): Promise<RaceCharacter> {
       return {
         definition: toDefinition(runtime),
         faceTextureUrl: runtime.faceTextureUrl,
+        kart: kartFor(runtime.kartId),
         source: "STUDIO",
       };
     } catch (error) {
@@ -70,7 +100,7 @@ export async function resolveRaceCharacter(): Promise<RaceCharacter> {
 
   try {
     const local = loadActiveCharacter();
-    if (local) return { definition: local, faceTextureUrl: null, source: "LOCAL" };
+    if (local) return { definition: local, faceTextureUrl: null, kart: kartFor(null), source: "LOCAL" };
   } catch (error) {
     console.warn("[characters] no local character either; using the fallback driver", error);
   }
@@ -78,6 +108,7 @@ export async function resolveRaceCharacter(): Promise<RaceCharacter> {
   return {
     definition: toDefinition(FALLBACK_RUNTIME),
     faceTextureUrl: null,
+    kart: KartPresets[0]!,
     source: "FALLBACK",
   };
 }
