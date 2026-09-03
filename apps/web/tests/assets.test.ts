@@ -651,3 +651,44 @@ describe("atlases", () => {
     }
   });
 });
+
+describe("the panorama is resolved for the screen it fills", () => {
+  /**
+   * The one assertion that would have prevented the blurriest thing in the game.
+   *
+   * The backdrop was 1536 px wide, and the comment in the generator justified it with the claim that
+   * "a backdrop is never sampled at texel density". That claim is false and the arithmetic says so
+   * plainly: the panorama wraps 360 degrees around a cylinder that fills the horizon, so its angular
+   * resolution is what matters, and 1536 / 360 is 4.3 px per degree against a 1080p screen's 31. Seven
+   * times magnified, across the band occupying the upper third of every frame.
+   *
+   * So this test is written in px-per-degree rather than in pixels. A future change that halves the
+   * width to save bytes has to argue with the number a player actually sees.
+   */
+  const DEGREES = 360;
+  /** 1920 px across a 62-degree field of view: what the race camera delivers on a desktop. */
+  const SCREEN_PX_PER_DEGREE = 1920 / 62;
+
+  const panoramas = manifest.assets.filter((asset) => asset.category === "backdrop");
+
+  it("covers every circuit", () => {
+    expect(panoramas.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(panoramas.map((asset) => [asset.id, asset] as const))("%s", (_id, asset) => {
+    const pxPerDegree = asset.width / DEGREES;
+    // At least a quarter of screen density. Not parity: the shell is 820 m away behind atmospheric
+    // haze, and matching a screen would need 11,000 px, which no mobile GPU will sample.
+    expect(pxPerDegree).toBeGreaterThan(SCREEN_PX_PER_DEGREE / 4);
+    /**
+     * And no wider than 4096.
+     *
+     * A ceiling, not a preference: 4096 is the maximum texture dimension WebGL 2 guarantees and the
+     * practical limit on older mobile GPUs. A 8192-wide panorama would fail to upload on exactly the
+     * devices that need the download budget most, and it would fail silently — a black sky.
+     */
+    expect(asset.width).toBeLessThanOrEqual(4096);
+    // Two to one, because a cylindrical projection of 360 by 180 degrees is.
+    expect(asset.width / asset.height).toBeCloseTo(2, 1);
+  });
+});

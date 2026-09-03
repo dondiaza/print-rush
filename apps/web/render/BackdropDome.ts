@@ -133,6 +133,16 @@ export function createBackdrop(
   let assetId: string | null = null;
   if (texture) {
     const panorama = texture.clone();
+    /**
+     * Anisotropic filtering, on the one surface that most needs it.
+     *
+     * The horizon band is viewed at a grazing angle for the whole race — the shell is a cylinder, so
+     * near the top and bottom of the visible band the texture is compressed almost to nothing along
+     * one axis. That is the exact case isotropic mip filtering cannot handle, and it is why the
+     * horizon shimmered even before the resolution was raised. Sixteen is the cap Babylon clamps to
+     * the device's own maximum, so this asks for the best available rather than a guess.
+     */
+    panorama.anisotropicFilteringLevel = 16;
     panorama.wrapU = Texture.WRAP_ADDRESSMODE;
     // Vertically it must not repeat: the panorama is floor-to-ceiling, and wrapping would put the
     // ceiling directly above the floor at the top edge.

@@ -71,14 +71,29 @@
 }
 .pr-button--block { width: 100%; }
 
+/*
+ * Dark text on the brand colour, not white.
+ *
+ * This was `color: #fff` on the pink, and measured against WCAG it is 3.25:1 — under the 4.5:1 that
+ * body-sized text needs, and it got *worse* on hover (2.45:1) because the hover state lightens the
+ * pink. At the 10 px of a `--md` button that is genuinely hard to read, which is what was reported.
+ *
+ * White is the wrong instinct here because `--pink` is a *light* colour: its relative luminance is
+ * 0.27, a third of the way to white. Ink on it measures 6.05:1, and it is also what the rest of the
+ * identity already does — `.race-banner` and `.brand-mark` have always been ink on pink. So this
+ * makes the primary button consistent with the brand rather than an exception to it.
+ *
+ * `contrast.test.ts` measures every pair in both stylesheets now, so this cannot drift back.
+ */
 .pr-button--primary {
-  background: linear-gradient(150deg, var(--pink), #c8218a);
-  color: #fff;
-  box-shadow: 0 10px 26px rgba(255, 61, 166, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: linear-gradient(150deg, var(--pink), #e02b93);
+  color: var(--ink);
+  box-shadow: 0 10px 26px rgba(255, 61, 166, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .pr-button--primary:not(:disabled):hover {
   background: linear-gradient(150deg, #ff62b8, var(--pink));
-  box-shadow: 0 14px 34px rgba(255, 61, 166, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  color: var(--ink);
+  box-shadow: 0 14px 34px rgba(255, 61, 166, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .pr-button--secondary {

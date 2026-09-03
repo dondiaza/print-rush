@@ -46,7 +46,10 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .photo-reference { position: absolute; right: 20px; top: 20px; width: 76px; height: 92px; background-position: center; background-size: cover; border: 2px solid var(--pink); filter: saturate(.7); }
 .control-drawer { position: relative; z-index: 2; overflow-y: auto; padding: 18px 24px 38px; border-left: 1px solid var(--line); background: #0d0d12; scrollbar-width: thin; scrollbar-color: var(--pink) transparent; }
 .control-tabs { display: grid; grid-template-columns: repeat(4,1fr); gap: 2px; margin-bottom: 16px; position: sticky; top: -18px; z-index: 3; padding-top: 18px; background: #0d0d12; }
-.control-tabs button { min-width: 0; height: 35px; border: 0; background: #181720; color: rgba(247,242,232,.42); font-size: 7px; font-weight: 950; cursor: pointer; }
+/* The dim was .42, which measures 3.40:1 on this surface — too faint for a 7 px label even as an
+   inactive state. .62 reaches 5.2:1 and the active tab is still unmistakable, since it inverts to
+   ink on pink rather than merely brightening. */
+.control-tabs button { min-width: 0; height: 35px; border: 0; background: #181720; color: rgba(247,242,232,.62); font-size: 7px; font-weight: 950; cursor: pointer; }
 .control-tabs button.active { color: var(--ink); background: var(--pink); }
 .studio-control { min-height: 57px; display: flex; flex-direction: column; justify-content: center; gap: 8px; border-bottom: 1px solid var(--line); color: rgba(247,242,232,.57); font-size: 8px; font-weight: 900; letter-spacing: .13em; }
 .studio-control span { display: flex; justify-content: space-between; }
@@ -216,7 +219,9 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .hud-top-center { grid-column: 2; justify-self: center; text-align: center; }
 .hud-lap { display: inline-block; background: var(--paper); color: var(--ink); padding: 9px 16px 8px; transform: skew(-6deg); font-family: var(--display); font-size: 20px; letter-spacing: .04em; }
 .hud-time { font: 700 12px/1 var(--sans); letter-spacing: .1em; margin-top: 10px; text-shadow: 0 2px 8px #000; }
-.hud-sector { margin-top: 7px; color: rgba(247,242,232,.62); font-size: 7px; font-weight: 900; letter-spacing: .14em; text-shadow: 0 2px 8px #000; }.hud-lap.final { color: var(--paper); background: var(--pink); animation: final-pulse .8s ease-in-out infinite alternate; }.hud-shuffled .hud-position { transform: translateX(5px) rotate(2deg); }.hud-shuffled .hud-item { transform: rotate(5deg); }.hud-shuffled .hud-top-center { transform: translateY(3px) skew(2deg); }
+.hud-sector { margin-top: 7px; color: rgba(247,242,232,.62); font-size: 7px; font-weight: 900; letter-spacing: .14em; text-shadow: 0 2px 8px #000; }/* Ink on pink, as the plain badge is ink on paper. Paper on pink measured 2.91:1 — the one piece of
+   the HUD that told the player something urgent was the least legible thing on screen. */
+.hud-lap.final { color: var(--ink); background: var(--pink); animation: final-pulse .8s ease-in-out infinite alternate; }.hud-shuffled .hud-position { transform: translateX(5px) rotate(2deg); }.hud-shuffled .hud-item { transform: rotate(5deg); }.hud-shuffled .hud-top-center { transform: translateY(3px) skew(2deg); }
 .hud-minimap { grid-column: 3; width: 140px; height: 92px; filter: drop-shadow(0 3px 7px #000); }
 .hud-speed { grid-column: 3; grid-row: 3; align-self: end; justify-self: end; text-align: right; }
 .hud-speed strong { display: block; font-family: var(--display); font-style: italic; font-size: clamp(48px, 6vw, 80px); line-height: .75; }

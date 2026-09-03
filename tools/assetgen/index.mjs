@@ -43,8 +43,27 @@ const MATERIAL_SIZE = 512;
  */
 const MATERIAL_MAP_SIZE = 256;
 const WRAP_SIZE = 1024;
-/** 1536 x 768 rather than 2048 x 1024: a backdrop is never sampled at texel density. */
-const BACKDROP = { width: 1536, height: 768 };
+/**
+ * The panorama, 4096 x 2048.
+ *
+ * It was 1536 x 768, justified in this very comment as *"a backdrop is never sampled at texel
+ * density"* — and that claim is simply false. The panorama is wrapped around a cylinder that fills
+ * the horizon, so it is magnified by whatever the ratio between its angular resolution and the
+ * screen's happens to be:
+ *
+ *   1536 px over 360 degrees      =  4.3 px per degree
+ *   1920 px screen at 62 deg FOV  = 31.0 px per degree
+ *
+ * Seven times under-resolved, across the band that occupies the upper third of every frame of every
+ * race. No amount of work on the road, the props or the lighting could compensate for that, and it is
+ * the single largest measurable reason a screenshot looked soft.
+ *
+ * 4096 is the ceiling rather than a preference: it is the maximum texture dimension guaranteed by
+ * WebGL 2 and the practical limit on older mobile GPUs, where 8192 is not safe. It gives 11.4 px per
+ * degree — a 2.7x improvement, and about a third of screen density, which for something 820 m away
+ * behind atmospheric haze is the right place to stop.
+ */
+const BACKDROP = { width: 4096, height: 2048 };
 
 const manifest = [];
 let bytesWritten = 0;
