@@ -7,6 +7,8 @@ import {
   StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FrameMonitor } from "@/performance/PerformanceManager";
 import {
@@ -132,6 +134,31 @@ describe("manifest freshness", () => {
 
     expect(modes).toEqual(["no-cache", "reload"]);
     expect(modes).not.toContain("force-cache");
+  });
+
+  /**
+   * A second reader of the same manifest is how this came back. `IconAtlas` fetches it for the HUD
+   * sprite sheet with its own copy of the cache mode, so fixing `AssetCatalog` alone left the same
+   * defect one file away. The rule is about the manifest, not about one module, so it is checked
+   * over the source rather than over a call.
+   */
+  it("has no reader left that pins a fetch to the browser cache", () => {
+    const root = join(__dirname, "..");
+    const skip = new Set(["node_modules", ".next", "public", "tests", "out"]);
+    const pinned = /cache:\s*["']force-cache["']/;
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        if (skip.has(entry)) continue;
+        const path = join(dir, entry);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry) && pinned.test(readFileSync(path, "utf8"))) {
+          offenders.push(path.slice(root.length + 1).replaceAll("\\", "/"));
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([]);
   });
 
   it("sees the new bundle when a race retries with a refreshed manifest", async () => {

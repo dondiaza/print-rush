@@ -53,7 +53,15 @@ async function loadAtlas(): Promise<Atlas | null> {
 
   inFlight = (async () => {
     try {
-      const response = await fetch("/assets/assets.manifest.json", { cache: "force-cache" });
+      /**
+       * Revalidated, not pinned to the cache.
+       *
+       * The URL is written out rather than imported from `AssetCatalog` on purpose — that module
+       * pulls Babylon in, and the HUD must not. The cache mode, though, has to agree with it: a
+       * `force-cache` read of this same manifest is what left returning players asking for asset
+       * names a deployment no longer shipped. See `AssetCatalog.load`.
+       */
+      const response = await fetch("/assets/assets.manifest.json", { cache: "no-cache" });
       if (!response.ok) throw new Error(`manifest ${response.status}`);
       const manifest = (await response.json()) as { assets: ManifestAsset[] };
       const asset = manifest.assets.find((entry) => entry.id === "ui_icon_atlas");
