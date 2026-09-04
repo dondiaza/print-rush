@@ -9,6 +9,7 @@ import { TrackMap, type TrackMarker } from "./TrackMap";
 import { TouchStick } from "./TouchStick";
 import { DebugOverlay, useDebugEnabled } from "./DebugOverlay";
 import { Icon, iconForItem } from "@/ui/IconAtlas";
+import { Button } from "./ui/Button";
 
 type Props = {
   laps: AllowedLaps;
@@ -60,6 +61,27 @@ const INITIAL_HUD: HudState = {
   maxSpeedKph: 0,
 };
 
+const INITIAL_PROGRESS: LoadProgress = {
+  loaded: 0,
+  total: 100,
+  label: "Iniciando motor",
+  phase: "CATALOG",
+  readiness: {
+    catalogReady: false,
+    assetsReady: false,
+    geometryReady: false,
+    texturesReady: false,
+    shadersReady: false,
+    physicsReady: false,
+    audioReady: false,
+    racersReady: false,
+    trackReady: false,
+    uiReady: false,
+    gpuReady: false,
+    raceReady: false,
+  },
+};
+
 /**
  * Rival colours, in grid order.
  *
@@ -94,8 +116,9 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
    * forever. Now every step comes from an asset that actually settled, so a bar that stops moving
    * means something is genuinely stuck, and the label says which kind of asset it is stuck on.
    */
-  const [progress, setProgress] = useState<LoadProgress>({ loaded: 0, total: 0, label: "Iniciando motor" });
+  const [progress, setProgress] = useState<LoadProgress>(INITIAL_PROGRESS);
   const [error, setError] = useState<string | null>(null);
+  const [activeTrack, setActiveTrack] = useState(loadActiveTrack);
   const [autoAccelerate, setAutoAccelerate] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const debug = useDebugEnabled();
@@ -109,7 +132,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
    * HUD frame — sixty times a second. Memoising with no dependencies is right here because the track
    * cannot change during a race: the runtime was handed this same definition when it was created.
    */
-  const trackNodes = useMemo(() => loadActiveTrack().baked.definition.nodes, []);
+  const trackNodes = activeTrack.baked.definition.nodes;
 
   /**
    * Who to draw on the map.
@@ -147,7 +170,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
      */
     void resolveRaceCharacter().then((driver) => {
       if (!active) return null;
-      onProgress({ loaded: 0, total: 1, label: "Preparando piloto" });
+      onProgress({ ...INITIAL_PROGRESS, label: "Preparando piloto" });
       /**
        * Everything about the driver comes from the one resolution.
        *
@@ -166,7 +189,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         character: driver.definition,
         faceTextureUrl: driver.faceTextureUrl,
         kartDefinition: driver.kart,
-        trackDefinition: loadActiveTrack(),
+        trackDefinition: activeTrack,
       });
     }).then((runtime) => {
       if (!runtime) return;
@@ -175,8 +198,10 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       runtime.start();
       setLoading(false);
     }).catch(() => {
-      if (active) setError("No hemos podido iniciar WebGL. Actualiza el navegador o activa la aceleración gráfica.");
-      setLoading(false);
+      if (active) {
+        setError("Ha habido un problema preparando el circuito. No empezaremos con la pista incompleta.");
+        setLoading(false);
+      }
     });
     return () => {
       active = false;
@@ -186,7 +211,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
     // `nickname` is in the list because it is a genuine input to the runtime — it names the player's
     // row in the classification. It cannot change while this screen is mounted (it is a setting, and
     // settings live on the menu), so listing it costs nothing and keeps the dependency honest.
-  }, [laps, muted, nickname, onFinish]);
+  }, [activeTrack, laps, muted, nickname, onFinish]);
 
   useEffect(() => {
     runtimeRef.current?.setPaused(paused);
@@ -302,22 +327,34 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
       <div className="noise" aria-hidden="true" />
 
       {loading && (
-        <div className="race-menu">
-          <div className="race-menu-inner">
-            <h2>CARGANDO TALLER…</h2>
-            <p>{progress.label}{progress.total > 1 ? ` · ${progress.loaded}/${progress.total}` : ""}</p>
-            <div className="load-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(loadFraction(progress) * 100)}>
-              <span style={{ width: `${Math.round(loadFraction(progress) * 100)}%` }} />
+        <div className={`race-menu race-loading race-loading--${activeTrack.baked.blueprint.theme.toLowerCase()}`}>
+          <div className="race-loading__card">
+            <div className="race-loading__eyebrow">PRINT RUSH · PRÓXIMA CARRERA</div>
+            <div className="race-loading__art" aria-hidden="true"><span>PR</span><i /><b>{Math.round(loadFraction(progress) * 100)}%</b></div>
+            <div className="race-loading__copy">
+              <p className="race-loading__track">{activeTrack.baked.blueprint.name}</p>
+              <h2>PREPARANDO PISTA</h2>
+              <p className="race-loading__status">{progress.label}</p>
+              <div className="load-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(loadFraction(progress) * 100)}>
+                <span style={{ width: `${Math.round(loadFraction(progress) * 100)}%` }} />
+              </div>
+              <div className="race-loading__checks" aria-label="Sistemas preparados">
+                <span className={progress.readiness.trackReady ? "is-ready" : ""}>PISTA</span>
+                <span className={progress.readiness.racersReady ? "is-ready" : ""}>PILOTOS</span>
+                <span className={progress.readiness.texturesReady ? "is-ready" : ""}>TEXTURAS</span>
+                <span className={progress.readiness.gpuReady ? "is-ready" : ""}>LUCES</span>
+              </div>
+              <small>La carrera comienza cuando todo está listo.</small>
             </div>
           </div>
         </div>
       )}
       {debug && <DebugOverlay hudRef={hudRef} />}
-      {error && <div className="race-menu"><div className="race-menu-inner"><h2>SIN MOTOR</h2><p>{error}</p><button className="cta-primary" onClick={onExit}>VOLVER</button></div></div>}
+      {error && <div className="race-menu"><div className="race-menu-inner"><h2>PISTA NO PREPARADA</h2><p>{error}</p><Button variant="primary" size="lg" block onClick={() => { setError(null); setLoading(true); setProgress(INITIAL_PROGRESS); setActiveTrack(loadActiveTrack()); }}>REINTENTAR</Button><Button variant="ghost" size="lg" block onClick={onExit}>VOLVER</Button></div></div>}
 
       {!loading && !error && (
         <>
-          <div className="connection-note">V4 · LOCAL 60 HZ · {hud.trackName.toUpperCase()}</div>
+          <div className="connection-note">RACE READY · 120 HZ · {hud.trackName.toUpperCase()}</div>
           <div className={`hud ${hud.shuffled ? "hud-shuffled" : ""}`} aria-live="polite">
             <div className="hud-position"><Icon name="ui_position" size={15} label="Posición" />{hud.position}<span>/{hud.gridSize}</span></div>
             <div className="hud-top-center">
@@ -403,9 +440,9 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
         <div className="race-menu">
           <div className="race-menu-inner">
             <h2>PAUSA</h2>
-            <button className="cta-primary" onClick={() => setPaused(false)}><span>CONTINUAR</span><b>→</b></button>
-            <button className="cta-ghost" onClick={() => runtimeRef.current?.respawn()}>REAPARECER</button>
-            <button className="cta-ghost" onClick={() => setShowControls((value) => !value)} aria-expanded={showControls}>CONTROLES</button>
+            <Button variant="primary" size="lg" block trailing="→" onClick={() => setPaused(false)}>CONTINUAR</Button>
+            <Button variant="secondary" size="lg" block onClick={() => runtimeRef.current?.respawn()}>REAPARECER</Button>
+            <Button variant="ghost" size="lg" block onClick={() => setShowControls((value) => !value)} aria-expanded={showControls}>CONTROLES</Button>
             {showControls && (
               <div className="pause-controls">
                 <span>WASD / FLECHAS</span>
@@ -419,7 +456,7 @@ export function RaceExperience({ laps, nickname, muted, onExit, onFinish }: Prop
                 <span>R · REAPARECER</span>
               </div>
             )}
-            <button className="cta-ghost" onClick={onExit}>SALIR DE LA CARRERA</button>
+            <Button variant="ghost" size="lg" block onClick={onExit}>SALIR DE LA CARRERA</Button>
           </div>
         </div>
       )}

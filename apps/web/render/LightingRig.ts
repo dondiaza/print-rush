@@ -378,20 +378,20 @@ export class LightingRig {
  */
 export const ThemeLightingZones: Record<string, LightingZone[]> = {
   FLAGSHIP: [
-    { from: 0, name: "Escaparate", keyColor: "#d5e8ff", keyIntensity: 3.36, fillColor: "#b3cbef", fillIntensity: 1.02, groundColor: "#837164", fogColor: "#c5d8ee", fogDensity: 0.00055, exposure: 1.25, environment: 1.0 },
-    { from: 0.16, name: "Planta baja", keyColor: "#ffdaa1", keyIntensity: 2.8, fillColor: "#eadfcd", fillIntensity: 0.93, groundColor: "#837164", fogColor: "#e5ceae", fogDensity: 0.00079, exposure: 1.08, environment: 0.91 },
-    { from: 0.34, name: "Escalera", keyColor: "#eec394", keyIntensity: 2.15, fillColor: "#a1907d", fillIntensity: 0.63, groundColor: "#837264", fogColor: "#ad957a", fogDensity: 0.00141, exposure: 1.04, environment: 0.65 },
-    { from: 0.46, name: "Planta alta", keyColor: "#fff1d0", keyIntensity: 3.02, fillColor: "#eadfcd", fillIntensity: 0.96, groundColor: "#d88943", fogColor: "#ebd7b8", fogDensity: 0.00072, exposure: 1.14, environment: 1.0 },
-    { from: 0.6, name: "Probadores", keyColor: "#ffcf92", keyIntensity: 2.15, fillColor: "#a58a6d", fillIntensity: 0.7, groundColor: "#846b55", fogColor: "#ad8c6a", fogDensity: 0.00148, exposure: 1.04, environment: 0.62 },
-    { from: 0.7, name: "Almacén", keyColor: "#e4f0ff", keyIntensity: 3.25, fillColor: "#9bb0c8", fillIntensity: 0.78, groundColor: "#6f7682", fogColor: "#8ba0b9", fogDensity: 0.00106, exposure: 1.06, environment: 0.78 },
-    { from: 0.86, name: "Cajas y meta", keyColor: "#ffd9e8", keyIntensity: 3.14, fillColor: "#f2d6e4", fillIntensity: 1.04, groundColor: "#837164", fogColor: "#ecbfd8", fogDensity: 0.00065, exposure: 1.22, environment: 1.0 },
+    { from: 0, name: "Escaparate", keyColor: "#d5e8ff", keyIntensity: 2.45, fillColor: "#9ebce8", fillIntensity: 0.52, groundColor: "#65584f", fogColor: "#a9bfd8", fogDensity: 0.00055, exposure: 0.94, environment: 0.7 },
+    { from: 0.16, name: "Planta baja", keyColor: "#ffdaa1", keyIntensity: 2.35, fillColor: "#c9c3bb", fillIntensity: 0.5, groundColor: "#69594d", fogColor: "#c9b396", fogDensity: 0.00079, exposure: 0.96, environment: 0.66 },
+    { from: 0.34, name: "Escalera", keyColor: "#eec394", keyIntensity: 2.1, fillColor: "#8d8074", fillIntensity: 0.46, groundColor: "#65574d", fogColor: "#927e69", fogDensity: 0.00141, exposure: 0.9, environment: 0.5 },
+    { from: 0.46, name: "Planta alta", keyColor: "#fff1d0", keyIntensity: 2.5, fillColor: "#c9c3bb", fillIntensity: 0.52, groundColor: "#a56536", fogColor: "#c9b99e", fogDensity: 0.00072, exposure: 0.98, environment: 0.72 },
+    { from: 0.6, name: "Probadores", keyColor: "#ffcf92", keyIntensity: 2.1, fillColor: "#927a63", fillIntensity: 0.46, groundColor: "#695444", fogColor: "#927458", fogDensity: 0.00148, exposure: 0.9, environment: 0.48 },
+    { from: 0.7, name: "Almacén", keyColor: "#e4f0ff", keyIntensity: 2.45, fillColor: "#849ab4", fillIntensity: 0.5, groundColor: "#59616d", fogColor: "#7389a3", fogDensity: 0.00106, exposure: 0.94, environment: 0.62 },
+    { from: 0.86, name: "Cajas y meta", keyColor: "#ffd9e8", keyIntensity: 2.55, fillColor: "#d2b8c6", fillIntensity: 0.54, groundColor: "#69594d", fogColor: "#c89eb6", fogDensity: 0.00065, exposure: 1.02, environment: 0.72 },
   ],
   WAREHOUSE: [
-    { from: 0, name: "Muelle", keyColor: "#ddf0ff", keyIntensity: 3.4, fillColor: "#a3c0dd", fillIntensity: 0.93, groundColor: "#6f7682", fogColor: "#b3cce2", fogDensity: 0.00058, exposure: 1.27, environment: 1.0 },
-    { from: 0.2, name: "Estanterías", keyColor: "#eff4ff", keyIntensity: 2.69, fillColor: "#8ca0b3", fillIntensity: 0.74, groundColor: "#6f7682", fogColor: "#889aad", fogDensity: 0.00113, exposure: 1.04, environment: 0.72 },
-    { from: 0.42, name: "Pasarelas", keyColor: "#ffe9bb", keyIntensity: 2.35, fillColor: "#a19481", fillIntensity: 0.67, groundColor: "#6c7582", fogColor: "#ad9d85", fogDensity: 0.00134, exposure: 1.04, environment: 0.65 },
-    { from: 0.62, name: "Picking", keyColor: "#ffe298", keyIntensity: 2.58, fillColor: "#c38a4d", fillIntensity: 0.81, groundColor: "#876336", fogColor: "#b18452", fogDensity: 0.00099, exposure: 1.08, environment: 0.81 },
-    { from: 0.84, name: "Expedición", keyColor: "#e6f4ff", keyIntensity: 3.36, fillColor: "#a4bcd4", fillIntensity: 0.93, groundColor: "#6f7682", fogColor: "#abc4dd", fogDensity: 0.00061, exposure: 1.21, environment: 1.0 },
+    { from: 0, name: "Muelle", keyColor: "#ddf0ff", keyIntensity: 2.55, fillColor: "#8ea9c4", fillIntensity: 0.54, groundColor: "#59616d", fogColor: "#94adc3", fogDensity: 0.00058, exposure: 1, environment: 0.72 },
+    { from: 0.2, name: "Estanterías", keyColor: "#eff4ff", keyIntensity: 2.3, fillColor: "#788b9d", fillIntensity: 0.5, groundColor: "#59616d", fogColor: "#718295", fogDensity: 0.00113, exposure: 0.94, environment: 0.58 },
+    { from: 0.42, name: "Pasarelas", keyColor: "#ffe9bb", keyIntensity: 2.1, fillColor: "#887e70", fillIntensity: 0.46, groundColor: "#57616d", fogColor: "#90816e", fogDensity: 0.00134, exposure: 0.9, environment: 0.5 },
+    { from: 0.62, name: "Picking", keyColor: "#ffe298", keyIntensity: 2.4, fillColor: "#a5703d", fillIntensity: 0.5, groundColor: "#6d4f2a", fogColor: "#936a3f", fogDensity: 0.00099, exposure: 0.95, environment: 0.62 },
+    { from: 0.84, name: "Expedición", keyColor: "#e6f4ff", keyIntensity: 2.55, fillColor: "#8ea5bd", fillIntensity: 0.54, groundColor: "#59616d", fogColor: "#8fa7bf", fogDensity: 0.00061, exposure: 1, environment: 0.72 },
   ],
   /**
    * The print works: industrial neutral with the process colours as accents, as the brief asks. The
@@ -408,11 +408,11 @@ export const ThemeLightingZones: Record<string, LightingZone[]> = {
     { from: 0.82, name: "Control", keyColor: "#eaf5ff", keyIntensity: 2.85, fillColor: "#a3b6ca", fillIntensity: 0.88, groundColor: "#6c7482", fogColor: "#8c9db2", fogDensity: 0.0009, exposure: 1.14, environment: 0.92 },
   ],
   OFFICE: [
-    { from: 0, name: "Recepción", keyColor: "#fff4dd", keyIntensity: 2.91, fillColor: "#e7e1d6", fillIntensity: 1.04, groundColor: "#8e8375", fogColor: "#dfd7c5", fogDensity: 0.00065, exposure: 1.19, environment: 1.0 },
-    { from: 0.2, name: "Open office", keyColor: "#f3f8ff", keyIntensity: 2.69, fillColor: "#e7e1d6", fillIntensity: 0.96, groundColor: "#8e8375", fogColor: "#d3d8df", fogDensity: 0.00072, exposure: 1.14, environment: 1.0 },
-    { from: 0.44, name: "Escritorios", keyColor: "#fff0d5", keyIntensity: 2.46, fillColor: "#ccb993", fillIntensity: 0.85, groundColor: "#ad7640", fogColor: "#cbaf80", fogDensity: 0.00092, exposure: 1.08, environment: 0.88 },
-    { from: 0.64, name: "Sala y cocina", keyColor: "#ffe8c4", keyIntensity: 2.15, fillColor: "#bbad95", fillIntensity: 0.74, groundColor: "#82776a", fogColor: "#ad9e85", fogDensity: 0.00127, exposure: 1.04, environment: 0.73 },
-    { from: 0.84, name: "Pasillo final", keyColor: "#f7fcff", keyIntensity: 3.02, fillColor: "#e7e1d6", fillIntensity: 1.05, groundColor: "#8e8375", fogColor: "#dce4eb", fogDensity: 0.00061, exposure: 1.21, environment: 1.0 },
+    { from: 0, name: "Recepción", keyColor: "#fff4dd", keyIntensity: 2.45, fillColor: "#c5c0b8", fillIntensity: 0.54, groundColor: "#73695d", fogColor: "#c2b9a7", fogDensity: 0.00065, exposure: 1, environment: 0.72 },
+    { from: 0.2, name: "Open office", keyColor: "#f3f8ff", keyIntensity: 2.35, fillColor: "#c2c5ca", fillIntensity: 0.52, groundColor: "#73695d", fogColor: "#b4bac2", fogDensity: 0.00072, exposure: 0.98, environment: 0.68 },
+    { from: 0.44, name: "Escritorios", keyColor: "#fff0d5", keyIntensity: 2.2, fillColor: "#aa9877", fillIntensity: 0.48, groundColor: "#875a31", fogColor: "#aa9067", fogDensity: 0.00092, exposure: 0.94, environment: 0.58 },
+    { from: 0.64, name: "Sala y cocina", keyColor: "#ffe8c4", keyIntensity: 2.1, fillColor: "#998c78", fillIntensity: 0.46, groundColor: "#685e53", fogColor: "#8f806d", fogDensity: 0.00127, exposure: 0.9, environment: 0.5 },
+    { from: 0.84, name: "Pasillo final", keyColor: "#f7fcff", keyIntensity: 2.55, fillColor: "#c5c3bf", fillIntensity: 0.54, groundColor: "#73695d", fogColor: "#bdc5cc", fogDensity: 0.00061, exposure: 1.02, environment: 0.72 },
   ],
   MANGA: [
     { from: 0, name: "Entrada", keyColor: "#ffb2e0", keyIntensity: 2.15, fillColor: "#8b4eff", fillIntensity: 0.78, groundColor: "#554687", fogColor: "#6944ad", fogDensity: 0.00155, exposure: 1.11, environment: 0.65 },

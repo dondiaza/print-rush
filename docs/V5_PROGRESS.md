@@ -1,17 +1,69 @@
 # PRINT RUSH V5 — PROGRESO
 
-Actualizado: 2026-09-03
+Actualizado: 2026-09-04
 
 Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **642 tests** y build de los cinco
+Estado del build: `npm run check` **verde** — lint, typecheck, **799 tests** y build de los cinco
 workspaces.
 
 ---
 
 ## DONE
+
+### ETAPA 26 — SÍNTESIS DE 100 REFERENCIAS Y PROFUNDIDAD DE MUNDO (2026-09-04)
+
+- [x] RAR validado: 40 referencias de circuito, 35 de ambiente y 25 de material; 100/100 inspeccionadas
+      individualmente. Trazabilidad en `visual-reference-analysis.md` y traducción a sistemas en
+      `visual-implementation-matrix.md`
+- [x] Dirección propia documentada en `print-rush-art-direction.md`, con exclusión explícita de
+      personajes, vehículos, iconos, arquitectura singular y layouts protegidos
+- [x] Hombro continuo en una sola malla para separar ROAD/SHOULDER/OFFTRACK, con banking y UV en
+      metros; se conserva en LOW y tiene cobertura geométrica automatizada
+- [x] Cubierta dividida en naves instanciadas con aperturas reales al backdrop: estructura cercana,
+      cielo lejano y mejor lectura vertical sin multiplicar el coste por panel
+- [x] Landmarks de Tienda, Almacén, Oficina y Manga ampliados a escala de mundo; nueva capa lejana
+      temática de 20–26 m y menor scatter genérico para recuperar jerarquía
+- [x] QA: cinco circuitos HIGH a 1600×900, Flagship/Manga MEDIUM a 390×844, flujo completo desktop y
+      móvil landscape y diez ciclos de memoria. `RACE_READY` en todos, cero errores de consola,
+      canvases/hooks limpios y crecimiento mediano de heap 2,66 %
+- [x] Puerta integral: lint, typecheck, 799 tests y cinco builds de producción en verde
+
+Evidencia: `output/visualqa/ref100-*`. SwiftShader sigue siendo útil para comparar coste relativo,
+pero sus 6–8 FPS no representan una GPU física.
+
+### ETAPA 25 — RACE READY, FRAME PACING Y SETS AUTORALES DE LOS CINCO CIRCUITOS (2026-09-04)
+
+- [x] **`render/AssetManager.ts`:** plan de carrera por tema, libreas y familias de decals; categorías
+      críticas comprobadas antes de construir el mundo, fallos opcionales degradables, progreso
+      ponderado por bytes y estimación de residencia GPU
+- [x] **`render/RacePreloader.ts`:** contrato explícito de once estados hasta `raceReady`; espera real
+      de escena/texturas, compilación por variante efectiva de material y geometría, shadow variants
+      y varias renders ocultas. `GameRuntime.start()` no puede comenzar sin el contrato completo
+- [x] **`performance/QualityManager.ts`:** perfil automático y recomendación persistida; el warmup
+      sólo puede ajustar resolución antes de presentar la carrera. Cambios profundos de calidad se
+      aplican a la siguiente carga, nunca durante una vuelta
+- [x] **Frame pacing:** buffer de 600 muestras con EMA, p95, p99, peor frame, stutters y Long Tasks.
+      La simulación sigue protegida por clamp, pero la telemetría conserva el delta bruto
+- [x] **Sets autorales restantes:** Tienda, Almacén, Oficinas y Manga tienen ahora landmarks propios,
+      módulos de media distancia instanciados, umbrales de zona y hazards sincronizados con física
+      (`CROWD_GATE`, `FALLING_BOXES`, carretilla, sillas y papel de impresora). Serigrafía conserva su
+      set especializado como estándar dorado
+- [x] **Materiales:** UVs del road y verge en metros; se eliminó el escalado doble que convertía una
+      repetición de 6–8 m en manchas de decenas de metros. Las normales horneadas respetan la fuerza
+      de su clase de material
+- [x] **Carga y UI:** loader temático con progreso real, subsistemas visibles y error recuperable;
+      pausa migrada al sistema de botones común; safe areas y layout específico para móvil landscape
+- [x] **QA reproducible:** `tools/visualqa/shots.mjs` acepta captura rápida y viewport configurable;
+      `flow.mjs` valida loader/HUD/pausa desktop y móvil; `memory.mjs` reconstruye y destruye diez
+      carreras. El hook QA elimina su propia closure en `dispose`
+
+Evidencia de navegador: cinco temas alcanzan `raceReady: true` sin errores de consola. En las vistas
+panorámicas HIGH bajo SwiftShader se midieron 330–416 draws y 0,41–0,89 M triángulos en los cuatro
+sets nuevos; Serigrafía 354 draws y 0,53 M. El FPS de software no representa GPU real, pero p95/p99
+se registran honestamente y el coste relativo queda guardado en `output/visualqa/*/stats.json`.
 
 ### ETAPA 24 — RECONSTRUCCIÓN VISUAL DE CIRCUITOS: LA NAVE, LA BARRERA, LA SEÑALIZACIÓN Y EL SET DORADO (2026-09-03)
 
@@ -80,11 +132,10 @@ holgura real y los brazos por el radio de la espiral); los rangos de sector con 
 horneado da a los dos últimos nodos el sector 1, y "un tercio de la zona de diseño" caía un tercio de
 vuelta más allá); el túnel negro (dos bobinados sobre los mismos vértices anulan las normales).
 
-**Pendiente y con nombre:** sets autorales para Tienda, Almacén, Oficinas y Manga. Reciben ya la nave,
-la barrera, las líneas, las puertas de zona, los chevrones y la meta, con sus especificaciones por
-tema; les falta lo que la Serigrafía tiene en `render/sets/PrintFactorySet.ts`: heroes propios,
-maquinaria animada, hazards del mundo y VFX. Y la biblioteca de referencia del brief no está en el
-repo — ver `docs/TRACK_VISUAL_DNA.md` §0.
+**Cerrado en la Etapa 25:** Tienda, Almacén, Oficinas y Manga ya tienen sets autorales, landmarks,
+arquitectura rítmica y hazards propios. La Serigrafía conserva más sistemas ambientales por ser el
+golden standard; la reducción o ampliación futura se decide con el presupuesto medido, no por
+paridad artificial de objetos.
 
 ### ETAPA 23 — SALTO, OBJETOS Y CÁMARA EN PRIMERA PERSONA (2026-09-03)
 
@@ -550,7 +601,7 @@ recorta, y la caché que colapsa ocho joins en una petición.
 
 ---
 
-## IN PROGRESS
+## HISTÓRICO — PLAN INICIAL SUPERADO POR LAS ETAPAS 25–26
 
 ### ETAPA 4 — T-SHIRT MEGASTORE (GOLD STANDARD)
 El circuito existe hoy como **generado** desde el blueprint temático: 2.564 m, 107 s, 14 curvas,
@@ -568,7 +619,7 @@ zona cajas → salto sobre tienda → meta) y que reciba sus hero assets.
 
 ---
 
-## NEXT
+## BACKLOG HISTÓRICO
 
 | Etapa | Contenido |
 |---|---|
@@ -614,7 +665,7 @@ Decisión de infraestructura pendiente.
 
 ---
 
-## VERIFICACIÓN NO REALIZADA
+## VERIFICACIÓN HISTÓRICA (NO REPRESENTA EL ESTADO ACTUAL)
 
 Honestidad sobre el alcance de lo comprobado:
 

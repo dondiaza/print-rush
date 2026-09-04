@@ -41,28 +41,28 @@
     "tshirt-megastore": {
       "theme": "FLAGSHIP",
       "name": "Tienda",
-      "status": "standard applied (hall, barrier, signage); authored set pending",
+      "status": "authored set applied: retail landmarks, display islands, zone gateways, folding crowd gate",
       "colors": { "primary": "#E8DFD0", "secondary": "#C98A52", "accent": ["#FF3DA6", "#B9FF45", "#65D8FF"], "neutral": "#6E6259", "emissive": ["#FFE9C4", "#FFF3DC"] },
-      "lighting": { "timeOfDay": "retail daytime", "keyLight": "4200 K warm", "fill": "6500 K", "exposure": "1.04-1.25", "emissive": "ceiling coffers, warm pendants, window band" }
+      "lighting": { "timeOfDay": "retail daytime under a dark ceiling", "keyLight": "4200 K warm", "fill": "6500 K", "exposure": "0.90-1.02", "emissive": "ceiling coffers, warm pendants, window band" }
     },
     "warehouse-express": {
       "theme": "WAREHOUSE",
       "name": "Almacén",
-      "status": "standard applied; authored set pending",
+      "status": "authored set applied: loading bays, pallet towers, robot, conveyors, forklift and falling loads",
       "colors": { "primary": "#5A6068", "secondary": "#B98A57", "accent": ["#FFC02E", "#3E6E9E"], "neutral": "#4A4E54", "emissive": ["#F4F8FF", "#EEF4FF"] },
-      "lighting": { "timeOfDay": "industrial daylight", "keyLight": "5600 K", "fill": "7500 K at the dock", "exposure": "1.04-1.27", "emissive": "skylights, LED battens, dock doors" }
+      "lighting": { "timeOfDay": "industrial daylight", "keyLight": "5600 K", "fill": "7500 K at the dock", "exposure": "0.90-1.00", "emissive": "skylights, LED battens, dock doors" }
     },
     "office-chaos": {
       "theme": "OFFICE",
       "name": "Oficinas",
-      "status": "standard applied; authored set pending",
+      "status": "authored set applied: reception, giant monitor, keyboard, cup, meeting room, chairs and printer paper",
       "colors": { "primary": "#E6E1D8", "secondary": "#A2764B", "accent": ["#65D8FF", "#B9FF45"], "neutral": "#8C8378", "emissive": ["#F7FBFF", "#65D8FF"] },
-      "lighting": { "timeOfDay": "office daytime", "keyLight": "4000 K fluorescent", "fill": "6500 K window", "exposure": "1.04-1.21", "emissive": "ceiling tiles, monitors, glass curtain wall" }
+      "lighting": { "timeOfDay": "office daytime with dark services ceiling", "keyLight": "4000 K fluorescent", "fill": "6500 K window", "exposure": "0.90-1.02", "emissive": "ceiling tiles, monitors, glass curtain wall" }
     },
     "manga-mega-con": {
       "theme": "MANGA",
       "name": "Salón Manga",
-      "status": "standard applied; authored set pending",
+      "status": "authored set applied: entry portal, artist alley, cosplay bridge, arcades, stage and convention booths",
       "colors": { "primary": "#1B1630", "secondary": "#FF3DA6", "accent": ["#8F5CFF", "#65D8FF", "#FFD43B"], "neutral": "#252036", "emissive": ["#FF3DA6", "#65D8FF", "#8F5CFF"] },
       "lighting": { "timeOfDay": "night hall, practicals only", "keyLight": "white spots 2.15-2.69", "fill": "neon violet/cyan", "exposure": "1.06-1.23", "emissive": "LED battens, banners, screens, neon barrier band" }
     }

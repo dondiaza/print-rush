@@ -33,7 +33,15 @@ const launch = {
 };
 if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launch);
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+const viewport = {
+  width: Number(process.env.QA_VIEWPORT_WIDTH ?? 1600),
+  height: Number(process.env.QA_VIEWPORT_HEIGHT ?? 900),
+};
+const page = await browser.newPage({
+  viewport,
+  hasTouch: process.env.QA_TOUCH === "1",
+  isMobile: process.env.QA_MOBILE === "1",
+});
 const errors = [];
 page.on("console", (message) => { if (message.type() === "error") errors.push(message.text().slice(0, 300)); });
 page.on("pageerror", (error) => errors.push(`pageerror ${String(error).slice(0, 300)}`));
@@ -59,14 +67,14 @@ writeFileSync(`${outDir}/track.json`, JSON.stringify(info, null, 2));
 const hero = info.landmarks.find((landmark) => /CARRUSEL|ESCENARIO|ROBOT|MONITOR|PARED/.test(landmark.label)) ?? info.landmarks[2] ?? { progress: 0.5 };
 const first = info.landmarks[0] ?? { progress: 0.1 };
 
-const shots = [
+const canonicalShots = [
   { name: "01-start", progress: 0.002, back: 12, height: 4.2 },
   { name: "02-turn1", progress: 0.14, back: 10, height: 3.6 },
-  { name: "03-landmark1", progress: first.progress - 0.02, back: 10, height: 3.8, aimLateral: 10 },
+  { name: "03-landmark1", progress: first.progress - 0.012, back: 10, height: 3.8, target: first.position ? { ...first.position, y: first.position.y + 5.5 } : undefined },
   { name: "04-middle", progress: 0.5, back: 10, height: 3.6 },
   { name: "05-shortcut", progress: (info.shortcuts[0]?.from ?? 0.3) - 0.01, back: 10, height: 3.6 },
-  { name: "06-hero", progress: hero.progress - 0.035, back: 12, height: 4.4, lookAhead: 34 },
-  { name: "06b-hero-aim", progress: hero.progress - 0.02, back: 10, height: 4, lookAhead: 30, aimLateral: 34, aimHeight: 8 },
+  { name: "06-hero", progress: hero.progress - 0.018, back: 12, height: 4.4, lookAhead: 42 },
+  { name: "06b-hero-aim", progress: hero.progress - 0.012, back: 10, height: 4, target: hero.position ? { ...hero.position, y: hero.position.y + 5.5 } : undefined },
   { name: "07-finalturn", progress: 0.93, back: 10, height: 3.6 },
   { name: "08-finish", progress: 0.985, back: 14, height: 4 },
   { name: "09-overview", progress: 0.06, back: 46, height: 21, lookAhead: 110, aimHeight: 0, fov: 1.25 },
@@ -74,6 +82,9 @@ const shots = [
   { name: "11-tunnel", progress: 0.68, back: 8, height: 3.2, lookAhead: 30 },
   { name: "12-gate", progress: 0.185, back: 10, height: 3.6, lookAhead: 30 },
 ];
+const shots = process.env.QA_QUICK === "1"
+  ? canonicalShots.filter(({ name }) => ["01-start", "03-landmark1", "06b-hero-aim", "09-overview"].includes(name))
+  : canonicalShots;
 for (const shot of shots) {
   await page.evaluate((options) => window.__printRushQA.photo(options.progress, options), shot);
   await page.waitForTimeout(700);

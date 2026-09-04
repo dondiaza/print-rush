@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — the asset pipeline is plain ESM JavaScript, deliberately dependency-free.
 import { borderAlpha, decodePng, edgeDifference, interiorDifference, statistics } from "../../../tools/assetgen/decode.mjs";
@@ -46,9 +47,20 @@ type ManifestAsset = {
 const manifest: { assets: ManifestAsset[]; totalBytes: number; counts: Record<string, number> } =
   JSON.parse(readFileSync(MANIFEST, "utf8"));
 
+function pathOf(asset: ManifestAsset): string {
+  return join(ASSETS, "..", asset.sourceFile);
+}
+
 function load(asset: ManifestAsset) {
-  const path = join(ASSETS, "..", asset.sourceFile);
+  const path = pathOf(asset);
   return decodePng(readFileSync(path));
+}
+
+/** WebP is reserved for the five large authored panoramas; Sharp expands it for pixel QA. */
+async function loadBackdrop(asset: ManifestAsset) {
+  if (asset.sourceFile.endsWith(".png")) return load(asset);
+  const { data, info } = await sharp(pathOf(asset)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { width: info.width, height: info.height, channels: info.channels, pixels: data };
 }
 
 /**
@@ -85,14 +97,21 @@ describe("manifest", () => {
    * The brief's hardest rule: never claim an asset exists when it does not. The manifest is
    * generated from the disk, and this asserts the two have not drifted.
    */
-  it("every entry points at a file that actually exists, with the stated size", () => {
+  it("every entry points at a file that actually exists, with the stated size", async () => {
     for (const asset of manifest.assets) {
-      const path = join(ASSETS, "..", asset.sourceFile);
+      const path = pathOf(asset);
       expect(existsSync(path), `${asset.id} → ${asset.sourceFile}`).toBe(true);
-      const decoded = decodePng(readFileSync(path));
-      expect(decoded.width, `${asset.id} width`).toBe(asset.width);
-      expect(decoded.height, `${asset.id} height`).toBe(asset.height);
-      expect(decoded.channels === 4, `${asset.id} alpha`).toBe(asset.hasAlpha);
+      if (asset.sourceFile.endsWith(".png")) {
+        const decoded = decodePng(readFileSync(path));
+        expect(decoded.width, `${asset.id} width`).toBe(asset.width);
+        expect(decoded.height, `${asset.id} height`).toBe(asset.height);
+        expect(decoded.channels === 4, `${asset.id} alpha`).toBe(asset.hasAlpha);
+      } else {
+        const metadata = await sharp(path).metadata();
+        expect(metadata.width, `${asset.id} width`).toBe(asset.width);
+        expect(metadata.height, `${asset.id} height`).toBe(asset.height);
+        expect(metadata.hasAlpha, `${asset.id} alpha`).toBe(asset.hasAlpha);
+      }
     }
   });
 
@@ -292,8 +311,8 @@ describe("backdrops", () => {
     }
   });
 
-  it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s wraps horizontally", (id, asset) => {
-    const image = load(asset);
+  it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s wraps horizontally", async (id, asset) => {
+    const image = await loadBackdrop(asset);
     // A cylindrical panorama must join at the seam; vertically it does not, and must not be checked.
     const wrap = edgeDifference(image, "horizontal");
     const interior = interiorDifference(image, "horizontal");
@@ -313,8 +332,8 @@ describe("backdrops", () => {
    * produces it, so the top and bottom thirds must differ substantially — a flat panorama is the
    * "fondo plano" the brief prohibits.
    */
-  it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s has real vertical depth", (id, asset) => {
-    const image = load(asset);
+  it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s has real vertical depth", async (id, asset) => {
+    const image = await loadBackdrop(asset);
     const { width, height, channels, pixels } = image;
     const bandMean = (fromRow: number, toRow: number) => {
       let total = 0;

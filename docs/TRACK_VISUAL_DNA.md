@@ -6,19 +6,17 @@ racing de gama alta y fijarlos como reglas propias de Kart Pampling, sin copiar 
 
 ## 0. Sobre las referencias — leer primero
 
-El brief describe una biblioteca de más de cien capturas de referencia y pide analizarla completa.
-Se buscó en el repositorio (`/references`, `/reference-images`, `/assets/references` y variantes) y
-en el disco de trabajo: **no existe ninguna carpeta de referencias ni imágenes adjuntas**. Tampoco
-hay herramienta de generación de imágenes en este entorno de trabajo (verificado de nuevo el
-2026-09-03; consta también en `docs/ART_DIRECTION.md` §0).
+El 2026-09-04 se recibió y validó `Mario_Kart_100_Referencias_Codex.rar`: 100 imágenes originales,
+divididas en 40 referencias de circuito/composición, 35 de paisaje/ambiente y 25 de
+textura/material. Se inspeccionaron **las 100 imágenes individualmente**, además de sus cuatro hojas
+de contacto. La trazabilidad completa está en `docs/visual-reference-analysis.md` y la traducción a
+sistemas en `docs/visual-implementation-matrix.md`.
 
-Consecuencia honesta: este documento **no** es el análisis de esas imágenes. Es la codificación de
-los principios de diseño del género que el propio brief enumera — legibilidad, escala, jerarquía,
-capas, materiales creíbles, narrativa ambiental — contrastados con lo que se puede **medir en
-pantalla** con la infraestructura de QA visual que se ha construido (capturas automáticas de la
-escena real desde Chromium, sin HUD, en ocho vistas fijas por circuito). Cuando la biblioteca de
-referencia exista en el repo, la sección 1 debe revisarse contra ella; el resto son decisiones de
-producción y se mantienen.
+Las referencias se usan solo para extraer principios —legibilidad, escala, jerarquía, capas,
+materiales, luz, atmósfera y sensación de velocidad—. No se copian personajes, vehículos, iconos,
+logotipos, arquitectura singular ni layouts reconocibles. Las composiciones 068 y 073, dominadas por
+IP promocional, se descartan de manera literal y solo aportan reglas abstractas de agrupación tonal
+y espacio negativo.
 
 Todo lo que sigue se ha aplicado ya al circuito dorado (Serigrafía) y está en código. Donde una regla
 apunta a un módulo, ese módulo es la fuente de verdad.
@@ -179,9 +177,10 @@ Hazards del mundo: **prensa** que baja sobre el carril (PRESS) y **rejilla de va
 sincronizados con la fase que usa la física.
 
 Este circuito fija el estándar (calidad de material, densidad de props, luz, fondo, VFX y presupuesto)
-que después se aplica a los demás. Los otros cuatro reciben ya la **misma infraestructura** —
-edificio, barrera perfilada, líneas de borde, puertas de zona, chevrones, meta — y les falta su set
-autoral, que se documenta en `docs/V5_PROGRESS.md` como trabajo pendiente.
+que después se aplica a los demás. Los otros cuatro comparten la infraestructura —edificio, barrera
+perfilada, líneas de borde, puertas, chevrones y meta— y añaden desde la Etapa 25 sus propios sets:
+landmarks modelados, módulos de media distancia, umbrales de zona y hazards ligados a su tema. La
+Serigrafía mantiene la mayor densidad de VFX porque es el golden standard, no una plantilla clonada.
 
 ---
 

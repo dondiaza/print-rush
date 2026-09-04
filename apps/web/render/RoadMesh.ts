@@ -14,7 +14,10 @@ import type { TrackNode } from "@print-rush/game-core";
  */
 
 export type RoadMeshOptions = {
-  /** Metres of texture repeat along the direction of travel. */
+  /**
+   * Metres represented by one UV unit. Keep this at 1 when MaterialLibrary owns the physical tile
+   * size; larger values are only for callers using an unscaled material.
+   */
   tileLength?: number;
   /** Extra width beyond the drivable surface, for a run-off or kerb shoulder. */
   shoulder?: number;
@@ -61,7 +64,9 @@ export function buildRoadSurface(
     const lift = Math.tan(node.banking) * half;
     positions.push(node.x + nx * half, node.y + lift, node.z + nz * half);
     positions.push(node.x - nx * half, node.y - lift, node.z - nz * half);
-    uvs.push(0, node.distance / tileLength, 1, node.distance / tileLength);
+    // Physical density in both axes prevents a tile being stretched across the whole ribbon and
+    // prevents geometry and MaterialLibrary from scaling the along-track coordinate twice.
+    uvs.push(0, node.distance / tileLength, (half * 2) / tileLength, node.distance / tileLength);
   }
 
   for (let index = 0; index < count; index += 1) {
@@ -70,6 +75,71 @@ export function buildRoadSurface(
     const c = ((index + 1) % count) * 2;
     const d = c + 1;
     indices.push(a, b, c, b, d, c);
+  }
+
+  const mesh = new Mesh(name, scene);
+  const data = new VertexData();
+  data.positions = positions;
+  data.indices = indices;
+  data.uvs = uvs;
+  VertexData.ComputeNormals(positions, indices, normals);
+  data.normals = normals;
+  data.applyToMesh(mesh);
+  return mesh;
+}
+
+/**
+ * One continuous band outside both road edges.
+ *
+ * A shoulder made from boxes or decals breaks on banking and flickers at every join. This mesh uses
+ * the same local frame and distance UVs as the road, but only fills the annulus between two offsets
+ * from the road edge. Both sides live in one mesh, so adding a real ROAD → SHOULDER transition costs
+ * one draw rather than a source plus hundreds of instances.
+ */
+export function buildRoadBand(
+  scene: Scene,
+  nodes: readonly TrackNode[],
+  name: string,
+  innerOffset: number,
+  outerOffset: number,
+  heightOffset = 0,
+): Mesh {
+  const count = nodes.length;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const bandWidth = Math.max(0.01, outerOffset - innerOffset);
+
+  for (const side of [1, -1] as const) {
+    for (let index = 0; index < count; index += 1) {
+      const node = nodes[index]!;
+      const { nx, nz } = frameAt(nodes, index);
+      const edge = node.width * 0.5;
+      const outer = edge + outerOffset;
+      const inner = edge + innerOffset;
+      const outerLift = Math.tan(node.banking) * outer * side;
+      const innerLift = Math.tan(node.banking) * inner * side;
+      positions.push(
+        node.x + nx * side * outer,
+        node.y + outerLift + heightOffset,
+        node.z + nz * side * outer,
+        node.x + nx * side * inner,
+        node.y + innerLift + heightOffset,
+        node.z + nz * side * inner,
+      );
+      uvs.push(bandWidth, node.distance, 0, node.distance);
+    }
+
+    const base = side === 1 ? 0 : count * 2;
+    for (let index = 0; index < count; index += 1) {
+      const a = base + index * 2;
+      const b = a + 1;
+      const c = base + ((index + 1) % count) * 2;
+      const d = c + 1;
+      if (side === 1) indices.push(a, b, c, b, d, c);
+      else indices.push(a, c, b, b, c, d);
+    }
   }
 
   const mesh = new Mesh(name, scene);

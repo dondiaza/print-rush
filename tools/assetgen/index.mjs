@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { encodePng } from "./png.mjs";
@@ -23,8 +23,9 @@ import { packAtlas, packGrid } from "./atlas.mjs";
  * inspected, replaced by an artist or an image model without touching code, cached by the CDN, and
  * costs nothing at startup. The runtime generator stays as the fallback.
  *
- * Everything here is procedural — deterministic maths, not AI generation, which is not available in
- * this environment. See `docs/ART_DIRECTION.md` §0 for what that does and does not cover.
+ * Materials, decals, wraps, atlases and the greybox are deterministic procedural bakes. The five
+ * production panoramas are art-directed image-generation masters, preserved byte-for-byte across
+ * rebuilds. See `docs/ART_DIRECTION.md` §0 for the provenance and review rules.
  *
  * Run with `npm run assets:build`. Deterministic: a rebuild produces byte-identical files.
  */
@@ -65,15 +66,33 @@ const WRAP_SIZE = 1024;
  */
 const BACKDROP = { width: 4096, height: 2048 };
 
+/**
+ * These five panoramas are art-directed bitmap masters rather than procedural placeholders.
+ * `assets:build` still clears `public/assets` to prevent stale files, so they are captured before
+ * the clear and written back byte-for-byte during the bake. This keeps the public asset as the
+ * canonical source without duplicating the same image set in the repository.
+ *
+ * If a fresh checkout genuinely lacks one of them, its procedural definition remains a safe
+ * fallback. The greybox panorama is intentionally always procedural.
+ */
+const AUTHORED_BACKDROP_CIRCUITS = new Set(["store", "warehouse", "screenprinting", "office", "manga"]);
+const authoredBackdropFiles = new Map(
+  [...AUTHORED_BACKDROP_CIRCUITS]
+    .map((circuit) => {
+      const path = join(outputRoot, "tracks", circuit, `backdrop_${circuit}_panorama.webp`);
+      return existsSync(path) ? [circuit, readFileSync(path)] : null;
+    })
+    .filter(Boolean),
+);
+
 const manifest = [];
 let bytesWritten = 0;
 
-function write(relativePath, image, meta) {
+function writeEncoded(relativePath, encoded, image, meta, generator = "procedural") {
   const absolute = join(outputRoot, relativePath);
   mkdirSync(dirname(absolute), { recursive: true });
-  const png = encodePng(image.pixels, image.width, image.height, image.channels);
-  writeFileSync(absolute, png);
-  bytesWritten += png.length;
+  writeFileSync(absolute, encoded);
+  bytesWritten += encoded.length;
 
   manifest.push({
     id: meta.id,
@@ -81,11 +100,11 @@ function write(relativePath, image, meta) {
     ...(meta.circuit ? { circuit: meta.circuit } : {}),
     sourceFile: `assets/${relativePath.split("\\").join("/")}`,
     generated: true,
-    generator: "procedural",
+    generator,
     width: image.width,
     height: image.height,
     hasAlpha: image.channels === 4,
-    bytes: png.length,
+    bytes: encoded.length,
     usage: meta.usage,
     // Sub-rectangles, for an atlas. Absent on single-image assets.
     ...(meta.frames ? { frames: meta.frames } : {}),
@@ -106,7 +125,12 @@ function write(relativePath, image, meta) {
     // from the app is a separate, derived question: see `audit.mjs`, which reads the real source.
     status: "baked",
   });
-  return png.length;
+  return encoded.length;
+}
+
+function write(relativePath, image, meta) {
+  const png = encodePng(image.pixels, image.width, image.height, image.channels);
+  return writeEncoded(relativePath, png, image, meta);
 }
 
 // ------------------------------------------------------------------ materials
@@ -216,19 +240,28 @@ function bakeWraps() {
 function bakeBackdrops() {
   let count = 0;
   for (const [circuit, definition] of Object.entries(BACKDROPS)) {
-    let seed = 4231;
-    for (let c = 0; c < circuit.length; c += 1) seed = (seed * 31 + circuit.charCodeAt(c)) >>> 0;
-    const shade = definition.build({ seed });
-    const image = renderRgb(BACKDROP, (u, v) => shade(u, v));
     const id = `backdrop_${circuit}_panorama`;
     const folder = join("tracks", circuit);
-    write(join(folder, `${id}.png`), image, {
+    const authoredFile = authoredBackdropFiles.get(circuit);
+    const relativePath = join(folder, `${id}.${authoredFile ? "webp" : "png"}`);
+    const meta = {
       id,
       category: "backdrop",
       circuit,
       usage: `cylindrical panorama for ${circuit}, 360 degrees, wraps horizontally`,
       download: "track",
-    });
+    };
+    if (authoredFile) {
+      writeEncoded(relativePath, authoredFile, { ...BACKDROP, channels: 3 }, meta, "openai-imagegen-authored");
+      count += 1;
+      continue;
+    }
+
+    let seed = 4231;
+    for (let c = 0; c < circuit.length; c += 1) seed = (seed * 31 + circuit.charCodeAt(c)) >>> 0;
+    const shade = definition.build({ seed });
+    const image = renderRgb(BACKDROP, (u, v) => shade(u, v));
+    write(relativePath, image, meta);
     count += 1;
   }
   return count;
@@ -389,13 +422,12 @@ writeFileSync(
   `${JSON.stringify(
     {
       generatedAt: new Date().toISOString().slice(0, 10),
-      generator: "tools/assetgen — procedural, deterministic",
+      generator: "tools/assetgen — mixed procedural and art-directed",
       note:
-        "No AI image generation is available in this environment; every asset here is generated by "
-        + "deterministic code — signed distance fields for shapes, periodic noise for surfaces. "
-        + "Posters, crowd sprites and icons are graphic compositions rather than illustrations, "
-        + "which is a stated limit, not an oversight: see docs/ART_DIRECTION.md section 0. Avatar "
-        + "portraits from photographs remain out of reach and are listed as pending there.",
+        "The five production circuit panoramas are original art-directed image-generation masters, "
+        + "reviewed for franchise independence and baked as seam-safe WebP. Greybox, materials, decals, "
+        + "wraps, posters, sprites and icons remain deterministic procedural assets. See "
+        + "docs/ART_DIRECTION.md section 0 for provenance and constraints.",
       counts: {
         materials,
         decals,

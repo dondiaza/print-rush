@@ -51,6 +51,7 @@ const NO_TEXT: Record<string, string> = {
   // this parser does not read. The allowlist check above caught it as stale on the first run,
   // which is the behaviour that keeps this file honest.
   ".touch-stick__knob": "the thumbstick's knob",
+  ".race-loading__art i": "two decorative speed stripes on the loading artwork",
   ".guide-line": "a framing guide line in the crop editor",
   ".asset-glyph.character": "takes `color` from `.asset-glyph`, which sets #08080c",
   ".asset-glyph.kart": "takes `color` from `.asset-glyph`, which sets #08080c",

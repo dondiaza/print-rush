@@ -110,15 +110,27 @@ describe("texel density", () => {
   });
 
   it("squares up the verge's texture across the track", () => {
-    // The verge is roughly three times the width of the road it borders, and `buildRoadSurface`
-    // writes `u` as 0..1 across whatever width it is given. Left alone, that stretches the texture
-    // three to one exactly where a driver looks when running wide.
+    // The ribbon writes one UV unit per metre across and along its surface. MaterialLibrary can
+    // therefore choose one physical repeat size without stretching the broad verge sideways.
     const terrain = build("HIGH");
     const verge = terrain.meshes.find((mesh) => mesh.name === "terrain-verge")!;
     const uvs = verge.getVerticesData(VertexBuffer.UVKind)!;
     let maxU = 0;
     for (let index = 0; index < uvs.length; index += 2) maxU = Math.max(maxU, uvs[index]!);
-    expect(maxU).toBeGreaterThan(1.5);
+    expect(maxU).toBeGreaterThan(20);
+  });
+
+  it("builds both shoulders as one continuous metre-scaled mesh", () => {
+    const terrain = build("HIGH");
+    const shoulder = terrain.meshes.find((mesh) => mesh.name === "terrain-shoulder")!;
+    expect(shoulder).toBeDefined();
+    const uvs = shoulder.getVerticesData(VertexBuffer.UVKind)!;
+    let maxV = 0;
+    for (let index = 1; index < uvs.length; index += 2) maxV = Math.max(maxV, uvs[index]!);
+    expect(maxV).toBeGreaterThan(1000);
+    // Four vertices per centreline node: outer/inner on the left and on the right.
+    expect(shoulder.getTotalVertices()).toBe(circuit.definition.nodes.length * 4);
+    terrain.dispose();
   });
 });
 

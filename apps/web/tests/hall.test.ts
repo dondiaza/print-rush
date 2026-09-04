@@ -86,6 +86,10 @@ describe("the hall", () => {
       Math.abs(anchor.position.z - hall.bounds.maxZ) < 1;
     expect(onPerimeter).toBe(true);
     expect(hall.meshes.length).toBeGreaterThan(5);
+    const roofPanels = scene.meshes.filter(
+      (mesh) => mesh.parent === hall.root && /^hall-ceiling-\d+$/.test(mesh.name),
+    );
+    expect(roofPanels.length).toBe(HALLS[track.blueprint.theme]!.roof.panels);
     const before = scene.meshes.length;
     hall.dispose();
     terrain.dispose();

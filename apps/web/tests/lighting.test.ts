@@ -56,7 +56,10 @@ describe("nothing in the frame is unlit", () => {
     // No zone may be the gloomy one any more. Relative differences survive — a stairwell is still
     // darker than a shop window — but the floor is a floor.
     expect(zone.keyIntensity).toBeGreaterThanOrEqual(2.1);
-    expect(zone.exposure).toBeGreaterThanOrEqual(1);
+    // ACES needs headroom. The visual QA pass found that forcing every zone to 1+ erased the
+    // material separation in the bright retail/office worlds, despite looking "safe" numerically.
+    expect(zone.exposure).toBeGreaterThanOrEqual(0.85);
+    expect(zone.exposure).toBeLessThanOrEqual(1.25);
     expect(zone.environment).toBeGreaterThanOrEqual(0.45);
   });
 });

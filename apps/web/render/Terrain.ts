@@ -8,7 +8,7 @@ import {
 import type { TrackNode } from "@print-rush/game-core";
 import { TerrainConfig } from "@print-rush/game-core";
 import type { MaterialLibrary, MaterialRequest } from "./MaterialLibrary";
-import { buildRoadSurface, frameAt } from "./RoadMesh";
+import { buildRoadBand, buildRoadSurface, frameAt } from "./RoadMesh";
 
 /**
  * THE GROUND.
@@ -49,6 +49,7 @@ export type Terrain = {
 
 /** Which material dresses the ground outside the road, per theme. */
 type GroundLook = {
+  shoulder: MaterialRequest;
   verge: MaterialRequest;
   field: MaterialRequest;
   rumbleLight: string;
@@ -65,6 +66,7 @@ type GroundLook = {
  */
 const GROUND: Record<string, GroundLook> = {
   FLAGSHIP: {
+    shoulder: { materialClass: "PLASTIC", color: "#4f3547", tile: 2.2 },
     verge: { materialClass: "FLOOR_TILE", color: "#8e857b", texture: "mat_floortile_store", tile: 3 },
     // The shop floor beyond the aisle is the same polished tile, at a coarser repeat.
     field: { materialClass: "FLOOR_TILE", color: "#9a9088", texture: "mat_floortile_store", tile: 7 },
@@ -72,12 +74,14 @@ const GROUND: Record<string, GroundLook> = {
     rumbleDark: "#ff3da6",
   },
   WAREHOUSE: {
+    shoulder: { materialClass: "PAINTED_METAL", color: "#46515c", tile: 2.8 },
     verge: { materialClass: "CONCRETE", color: "#818893", texture: "mat_concrete_warehouse", tile: 4 },
     field: { materialClass: "CONCRETE", color: "#8c939c", texture: "mat_concrete_warehouse", tile: 9 },
     rumbleLight: "#ffc02e",
     rumbleDark: "#2b2732",
   },
   PRINT_FACTORY: {
+    shoulder: { materialClass: "PLASTIC", color: "#494151", tile: 2.6 },
     verge: { materialClass: "CONCRETE", color: "#605a6b", texture: "mat_concrete_factory", tile: 4 },
     // Sealed epoxy: the hall floor beyond the marked route, with its bay lines, not open ground.
     field: { materialClass: "FLOOR_TILE", color: "#5a5566", texture: "mat_epoxy_factory", tile: 12 },
@@ -85,18 +89,23 @@ const GROUND: Record<string, GroundLook> = {
     rumbleDark: "#8f5cff",
   },
   OFFICE: {
+    shoulder: { materialClass: "PLASTIC", color: "#51565f", tile: 2.4 },
     verge: { materialClass: "FLOOR_TILE", color: "#8f867b", texture: "mat_carpet_office", tile: 3 },
-    field: { materialClass: "FLOOR_TILE", color: "#a49a8e", texture: "mat_floortile_office", tile: 6 },
+    // A mid-value raised floor makes pale desks, paper and glass legible. The baked near-white tile
+    // turned the entire kilometre-scale office into one clipped surface under its ceiling panels.
+    field: { materialClass: "FLOOR_TILE", color: "#6c7077", tile: 6 },
     rumbleLight: "#f7f2e8",
     rumbleDark: "#65d8ff",
   },
   MANGA: {
+    shoulder: { materialClass: "PLASTIC", color: "#2d2748", tile: 2.2 },
     verge: { materialClass: "FLOOR_TILE", color: "#423a63", texture: "mat_carpet_manga", tile: 3 },
     field: { materialClass: "FLOOR_TILE", color: "#433969", texture: "mat_carpet_manga", tile: 8 },
     rumbleLight: "#ff3da6",
     rumbleDark: "#8f5cff",
   },
   GREYBOX: {
+    shoulder: { materialClass: "ASPHALT", color: "#4e535a", tile: 2.5 },
     verge: { materialClass: "ASPHALT", color: "#6a6f75", tile: 4 },
     field: { materialClass: "CONCRETE", color: "#7a7f85", tile: 10 },
     rumbleLight: "#e8e4dc",
@@ -224,7 +233,7 @@ export function createTerrain(
    * paint change, and one much lower reads as a kerb the kart falls off.
    */
   const verge = buildRoadSurface(scene, widen(nodes, TerrainConfig.vergeMetres * 2), "terrain-verge", {
-    tileLength: VERGE_TILE_LENGTH,
+    tileLength: 1,
     shoulder: 0,
   });
   verge.position.y -= 0.02;
@@ -236,17 +245,23 @@ export function createTerrain(
    * length, but the verge is three times wider — so its texture was stretched three to one across
    * the track, which reads as smearing exactly where a driver looks when running wide.
    */
-  const vergeWidth = meanWidth(nodes) + TerrainConfig.vergeMetres * 2;
-  const vergeUvs = verge.getVerticesData(VertexBuffer.UVKind);
-  if (vergeUvs) {
-    const across = vergeWidth / VERGE_TILE_LENGTH;
-    for (let index = 0; index < vergeUvs.length; index += 2) vergeUvs[index] = (vergeUvs[index] ?? 0) * across;
-    verge.setVerticesData(VertexBuffer.UVKind, vergeUvs);
-  }
+  // `buildRoadSurface` now writes metre-density UVs in both axes. MaterialLibrary applies the
+  // theme's repeat size once, so this broad ribbon stays square without a corrective second scale.
   verge.material = materials.get(look.verge);
   verge.receiveShadows = quality !== "LOW";
   verge.isPickable = false;
   meshes.push(verge);
+
+  // --------------------------------------------------------------- shoulder
+  // A darker 1.8 m band between the road and the broad driveable verge. This is intentionally not
+  // a physics boundary: it is a visual/material transition that survives speed, glare and a small
+  // screen. The road already extends 0.4 m beyond its nominal edge, so the band begins there without
+  // exposing a crack and ends well before the five-metre run-off reaches the barrier.
+  const shoulder = buildRoadBand(scene, nodes, "terrain-shoulder", 0.38, 2.2, -0.012);
+  shoulder.material = materials.get(look.shoulder);
+  shoulder.receiveShadows = quality !== "LOW";
+  shoulder.isPickable = false;
+  meshes.push(shoulder);
 
   // ----------------------------------------------------------- rumble strip
   if (quality !== "LOW") {
@@ -263,9 +278,6 @@ export function createTerrain(
     },
   };
 }
-
-/** Metres of verge covered by one repeat of its texture along the track. */
-const VERGE_TILE_LENGTH = 14;
 
 /**
  * A ground-height function derived from the centreline.
@@ -344,14 +356,6 @@ function groundHeight(
     const eased = t * t * (3 - 2 * t);
     return (nearestY - 0.5) * (1 - eased) + floor * eased;
   };
-}
-
-/** The mean road width, used to square up the verge's texture across the track. */
-function meanWidth(nodes: readonly TrackNode[]): number {
-  if (nodes.length === 0) return 12;
-  let total = 0;
-  for (const node of nodes) total += node.width;
-  return total / nodes.length;
 }
 
 /**

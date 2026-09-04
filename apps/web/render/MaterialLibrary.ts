@@ -500,6 +500,9 @@ export class MaterialLibrary {
         const normal = bakedNormal ?? maps?.normal ?? null;
         if (normal) {
           material.bumpTexture = normal;
+          // Baked normals previously bypassed the class strength and all rendered at 1.0. Respect
+          // the material model so carpet and tile micro-detail does not read as broad liquid waves.
+          normal.level = spec.bump;
           // The baked maps are written in the OpenGL convention (green up); the derived ones invert.
           material.invertNormalMapY = normal === bakedNormal ? false : true;
         }

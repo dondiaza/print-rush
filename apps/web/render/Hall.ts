@@ -50,6 +50,8 @@ export type HallSpec = {
   /** Ceiling height above the circuit's lowest road. */
   ceilingHeight: number;
   ceiling: MaterialRequest;
+  /** Opaque roof bays separated by real open slots, expressed as a share of the short span. */
+  roof: { panels: number; openRatio: number };
   walls: HallBand[];
   /** Pilasters on the walls and the free-standing grid inside. */
   columns: { spacing: number; size: number; material: MaterialRequest; base?: MaterialRequest; baseHeight?: number };
@@ -75,6 +77,7 @@ export const HALLS: Record<string, HallSpec> = {
     margin: 58,
     ceilingHeight: 27,
     ceiling: { materialClass: "PAINTED_METAL", color: "#3d404f", tile: 6 },
+    roof: { panels: 4, openRatio: 0.2 },
     walls: [
       { height: 3.2, materialClass: "CONCRETE", color: "#5c5866", texture: "mat_concrete_factory", tile: 3 },
       { height: 0.5, materialClass: "PAINTED_METAL", color: "#ffd43b", texture: "mat_safety_yellow", tile: 1.4 },
@@ -99,6 +102,7 @@ export const HALLS: Record<string, HallSpec> = {
     margin: 62,
     ceilingHeight: 25,
     ceiling: { materialClass: "PAINTED_METAL", color: "#8c95a3", tile: 6 },
+    roof: { panels: 5, openRatio: 0.22 },
     walls: [
       { height: 2.6, materialClass: "CONCRETE", color: "#7a7f88", texture: "mat_concrete_warehouse", tile: 3 },
       { height: 0.5, materialClass: "PAINTED_METAL", color: "#ffc02e", texture: "mat_safety_yellow", tile: 1.4 },
@@ -122,7 +126,10 @@ export const HALLS: Record<string, HallSpec> = {
   FLAGSHIP: {
     margin: 46,
     ceilingHeight: 16,
-    ceiling: { materialClass: "PLASTIC", color: "#ebe4d8", tile: 4 },
+    // A dark retail ceiling lets the warm shop floor and merchandise own the frame. The former
+    // cream slab reflected every light into one kilometre-wide brown plane.
+    ceiling: { materialClass: "PLASTIC", color: "#29242f", tile: 4 },
+    roof: { panels: 6, openRatio: 0.25 },
     walls: [
       { height: 1.1, materialClass: "WOOD", color: "#c98a52", texture: "mat_wood_store", tile: 2.2 },
       { height: 7.4, materialClass: "PLASTIC", color: "#e8dfd0", tile: 4 },
@@ -132,7 +139,7 @@ export const HALLS: Record<string, HallSpec> = {
     columns: {
       spacing: 42,
       size: 1.1,
-      material: { materialClass: "PLASTIC", color: "#ece6da", tile: 2 },
+      material: { materialClass: "PLASTIC", color: "#403846", tile: 2 },
       base: { materialClass: "WOOD", color: "#c98a52", texture: "mat_wood_store", tile: 1.5 },
       baseHeight: 0.9,
     },
@@ -145,16 +152,17 @@ export const HALLS: Record<string, HallSpec> = {
   OFFICE: {
     margin: 44,
     ceilingHeight: 14,
-    ceiling: { materialClass: "FLOOR_TILE", color: "#f0efe9", texture: "mat_floortile_office", tile: 1.2 },
+    ceiling: { materialClass: "PAINTED_METAL", color: "#343a42", tile: 5 },
+    roof: { panels: 7, openRatio: 0.23 },
     walls: [
-      { height: 0.9, materialClass: "PLASTIC", color: "#dcd6cb", tile: 3 },
-      { height: 7.6, materialClass: "SCREEN", color: "#cfe4f2", emissive: 0.3, panes: { width: 4, gap: 0.35, color: "#dcedfa", emissive: 0.5 } },
-      { height: 5.5, materialClass: "PLASTIC", color: "#e6e1d8", tile: 3 },
+      { height: 0.9, materialClass: "PLASTIC", color: "#63666b", tile: 3 },
+      { height: 7.6, materialClass: "SCREEN", color: "#8fb4c8", emissive: 0.18, panes: { width: 4, gap: 0.35, color: "#cce8f4", emissive: 0.38 } },
+      { height: 5.5, materialClass: "PLASTIC", color: "#555b63", tile: 3 },
     ],
     columns: {
       spacing: 26,
       size: 0.9,
-      material: { materialClass: "PLASTIC", color: "#f1ede6", tile: 2 },
+      material: { materialClass: "PAINTED_METAL", color: "#5a626c", tile: 2 },
     },
     trusses: null,
     skylights: { rows: 8, width: 2.4, length: 2.4, color: "#f7fbff", emissive: 0.95 },
@@ -166,6 +174,7 @@ export const HALLS: Record<string, HallSpec> = {
     margin: 60,
     ceilingHeight: 30,
     ceiling: { materialClass: "PAINTED_METAL", color: "#1a1528", tile: 6 },
+    roof: { panels: 4, openRatio: 0.28 },
     walls: [
       { height: 2.4, materialClass: "PAINTED_METAL", color: "#2a2340", tile: 3 },
       { height: 0.3, materialClass: "NEON", color: "#ff3da6", emissive: 1 },
@@ -368,19 +377,46 @@ export function buildHall(
   }
 
   // ------------------------------------------------------------------ ceiling
-  const ceiling = beveledBox(scene, "hall-ceiling", {
-    width: width + 2,
+  /**
+   * Roof bays with real apertures, not bright rectangles pasted under an opaque slab.
+   *
+   * The previous kilometre-scale box filled the entire upper half of the race camera with one flat
+   * material and hid the panorama that already existed outside. Splitting the same surface into
+   * long structural bays exposes the backdrop, leaves trusses crossing the openings and creates the
+   * near/structure/sky depth stack visible in the reference set. All equal bays are instances of one
+   * source, so the change is visual rather than a proportional draw-call increase.
+   */
+  const roofAlongX = width >= depth;
+  const roofRun = roofAlongX ? width + 2 : depth + 2;
+  const roofSpan = roofAlongX ? depth + 2 : width + 2;
+  const panelCount = Math.max(2, spec.roof.panels);
+  const totalOpen = roofSpan * Math.min(0.4, Math.max(0.08, spec.roof.openRatio));
+  const gap = totalOpen / (panelCount - 1);
+  const panelSpan = (roofSpan - totalOpen) / panelCount;
+  const ceiling = beveledBox(scene, "hall-ceiling-source", {
+    width: roofAlongX ? roofRun : panelSpan,
     height: 1.2,
-    depth: depth + 2,
+    depth: roofAlongX ? panelSpan : roofRun,
     bevel: 0.1,
     cornerSegments: 2,
-    uScale: (2 * (width + depth + 4)) / (spec.ceiling.tile ?? 6),
+    uScale: (2 * (roofRun + panelSpan)) / (spec.ceiling.tile ?? 6),
     vScale: 1 / (spec.ceiling.tile ?? 6),
   });
-  ceiling.position.set(centreX, ceilingY + 0.6, centreZ);
   ceiling.material = materials.get(spec.ceiling);
-  ceiling.freezeWorldMatrix();
+  ceiling.isVisible = false;
   keep(ceiling);
+  for (let index = 0; index < panelCount; index += 1) {
+    const across = -roofSpan * 0.5 + panelSpan * 0.5 + index * (panelSpan + gap);
+    const panel = ceiling.createInstance(`hall-ceiling-${index}`);
+    panel.parent = root;
+    panel.position.set(
+      roofAlongX ? centreX : centreX + across,
+      ceilingY + 0.6,
+      roofAlongX ? centreZ + across : centreZ,
+    );
+    panel.isPickable = false;
+    panel.freezeWorldMatrix();
+  }
 
   // Trusses across the short axis, purlins along the long one.
   if (spec.trusses) {

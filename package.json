@@ -19,7 +19,9 @@
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "build:vercel": "npm run build -w @print-rush/game-core && npm run build -w @print-rush/3d-factory && npm run build -w @print-rush/character-core && npm run build -w @print-rush/web",
     "assets:build": "node tools/assetgen/index.mjs",
-    "qa:shots": "node tools/visualqa/shots.mjs"
+    "qa:shots": "node tools/visualqa/shots.mjs",
+    "qa:flow": "node tools/visualqa/flow.mjs",
+    "qa:memory": "node tools/visualqa/memory.mjs"
   },
   "engines": {
     "node": ">=22"

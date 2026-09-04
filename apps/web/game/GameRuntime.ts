@@ -59,9 +59,12 @@ import {
 import { animateKartWheels, createKart, setKartPose } from "./createKart";
 import { animateCharacter, type CharacterVisual, type DriverState } from "@/render/CharacterBuilder";
 import { characterVisualOf } from "@/factory/GeneratedCharacter";
-import { getDeviceReport, getHardwareScalingLevel, qualityForProfile } from "@/performance/PerformanceManager";
+import { FrameMonitor } from "@/performance/PerformanceManager";
+import { QualityManager } from "@/performance/QualityManager";
 import type { StoredTrack } from "@/factory/TrackFactory";
-import { AssetCatalog, circuitKeyForTheme } from "@/render/AssetCatalog";
+import type { AssetCatalog } from "@/render/AssetCatalog";
+import { AssetManager } from "@/render/AssetManager";
+import { RacePreloader, type PreloadProgress, type RaceReadiness } from "@/render/RacePreloader";
 import { FAMILIES_BY_THEME } from "@/render/DecalScatter";
 
 /**
@@ -161,11 +164,18 @@ export type PhotoShot = {
   aimLateral?: number;
   aimHeight?: number;
   fov?: number;
+  /** Exact world-space aim point for visual QA of a landmark on a curved section. */
+  target?: { x: number; y: number; z: number };
 };
 
 export type QAStats = {
   fps: number;
   frameMs: number;
+  p95Ms: number;
+  p99Ms: number;
+  worstMs: number;
+  stutters: number;
+  longTasks: number;
   drawCalls: number;
   activeMeshes: number;
   totalMeshes: number;
@@ -176,6 +186,7 @@ export type QAStats = {
   particleSystems: number;
   materialLibrary: number;
   bakedTextures: number;
+  raceReady: boolean;
 };
 
 export type PrintRushQA = {
@@ -187,7 +198,7 @@ export type PrintRushQA = {
   track: () => {
     id: string;
     theme: string;
-    landmarks: Array<{ label: string; progress: number }>;
+    landmarks: Array<{ label: string; progress: number; side: -1 | 1; position: { x: number; y: number; z: number } }>;
     shortcuts: Array<{ from: number; to: number }>;
     jumps: number[];
     hazards: Array<{ kind: string; progress: number }>;
@@ -256,12 +267,7 @@ function labelForAsset(id: string): string {
   return "Materiales";
 }
 
-export type LoadProgress = {
-  loaded: number;
-  total: number;
-  /** What is being waited on, for a loading screen that says something true. */
-  label: string;
-};
+export type LoadProgress = PreloadProgress;
 
 /**
  * Everything that has to exist before the track can be built.
@@ -273,43 +279,12 @@ export type LoadProgress = {
 type Boot = {
   engine: Engine;
   scene: Scene;
-  quality: ReturnType<typeof qualityForProfile>;
+  quality: QualityManager["profile"];
   mobile: boolean;
   hardwareScaling: number;
-  catalog: AssetCatalog | null;
+  assetManager: AssetManager;
+  preloader: RacePreloader;
 };
-
-/**
- * The assets one race needs: the shared material set plus this circuit's own, the panorama, and the
- * player's livery.
- *
- * Ids are filtered against the manifest inside `preload`, so a name that the bake does not carry is
- * dropped from the total rather than stalling the bar. That is why this can list what the race wants
- * without first checking what exists.
- */
-function assetIdsForRace(catalog: AssetCatalog, theme: string, liveries: readonly string[]): string[] {
-  const circuit = circuitKeyForTheme(theme);
-  // Only the decal families this theme actually scatters. Downloading all seven would add weight for
-  // marks that would never be placed — an office floor is not going to get an ink splash.
-  const families = new Set(FAMILIES_BY_THEME[theme] ?? []);
-  const ids = catalog.manifest.assets
-    .filter((asset) => {
-      if (asset.category === "decal") {
-        return [...families].some((family) => asset.id.startsWith(`decal_${family}_`));
-      }
-      // Shared assets, plus this circuit's. Another circuit's set is not downloaded until it is
-      // selected, which is what keeps the per-race weight inside the budget.
-      return asset.circuit === undefined || asset.circuit === circuit;
-    })
-    .map((asset) => asset.id);
-  // Every livery on the grid, not just the player's. Four wraps is under a megabyte and it is the
-  // difference between a field of four distinct karts and one painted kart plus three plain ones.
-  for (const livery of new Set(liveries)) {
-    const wrap = catalog.wrap(livery);
-    if (wrap) ids.push(wrap.id);
-  }
-  return ids;
-}
 
 type Racer = {
   id: string;
@@ -375,7 +350,10 @@ export class GameRuntime {
   private readonly engine: Engine;
   private readonly scene: Scene;
   /** Baked assets for this race, or null when the manifest could not be read. */
-  private readonly catalog: AssetCatalog | null;
+  private readonly catalog: AssetCatalog;
+  private readonly assetManager: AssetManager;
+  private readonly preloader: RacePreloader;
+  private readonly performance = new FrameMonitor();
   private readonly instrumentation: SceneInstrumentation;
   private readonly camera: RaceCameraV5;
   private readonly input = new InputControllerV5();
@@ -431,13 +409,18 @@ export class GameRuntime {
    * moment — without driving there. It is QA infrastructure, not a gameplay camera.
    */
   private photo: PhotoShot | null = null;
+  /** The installed QA hook, so dispose can remove exactly its own closure. */
+  private qaHook: PrintRushQA | null = null;
   private readonly scratch = new Vector3();
 
   private constructor(private readonly options: GameRuntimeOptions, boot: Boot) {
-    const { quality, mobile, catalog } = boot;
+    const { quality, mobile, assetManager, preloader } = boot;
+    const catalog = assetManager.catalog;
     this.engine = boot.engine;
     this.scene = boot.scene;
     this.catalog = catalog;
+    this.assetManager = assetManager;
+    this.preloader = preloader;
     this.instrumentation = new SceneInstrumentation(this.scene);
 
     const baked = options.trackDefinition.baked;
@@ -487,7 +470,7 @@ export class GameRuntime {
       character: options.character,
       kart: options.kartDefinition,
       quality: quality === "LOW" ? "LOW" : quality === "MEDIUM" ? "MEDIUM" : "HIGH",
-      wrap: catalog?.wrapTexture(options.kartDefinition.livery ?? "NONE") ?? null,
+      wrap: catalog.wrapTexture(options.kartDefinition.livery ?? "NONE") ?? null,
       faceTexture,
     });
     playerVisual.getChildMeshes().forEach((mesh) => this.track.lighting.addShadowCaster(mesh));
@@ -521,7 +504,7 @@ export class GameRuntime {
         kart: botKart,
         quality: quality === "HIGH" || quality === "ULTRA" ? "MEDIUM" : "LOW",
         // Preloaded alongside the player's, so the grid is a set of distinct karts.
-        wrap: catalog?.wrapTexture(botKart.livery ?? "NONE") ?? null,
+        wrap: catalog.wrapTexture(botKart.livery ?? "NONE") ?? null,
       });
       /**
        * Shadow casters, and only for the nearest of the field.
@@ -575,9 +558,9 @@ export class GameRuntime {
    * race of a session running on the procedural fallback while the files sat unused in cache.
    */
   static async create(canvas: HTMLCanvasElement, options: GameRuntimeOptions): Promise<GameRuntime> {
-    const device = getDeviceReport();
-    const quality = qualityForProfile(device.profile);
-    const mobile = device.profile === "LOW" || window.matchMedia("(pointer: coarse)").matches;
+    const qualityManager = QualityManager.select();
+    const quality = qualityManager.profile;
+    const mobile = qualityManager.device.mobile;
 
     const engine = new Engine(canvas, quality !== "LOW", {
       antialias: quality !== "LOW",
@@ -585,16 +568,18 @@ export class GameRuntime {
       preserveDrawingBuffer: false,
       powerPreference: "high-performance",
     });
-    const hardwareScaling = getHardwareScalingLevel(device.profile);
+    const hardwareScaling = qualityManager.hardwareScaling;
     engine.setHardwareScalingLevel(hardwareScaling);
 
     const scene = new Scene(engine);
     scene.skipPointerMovePicking = true;
 
-    options.onProgress?.({ loaded: 0, total: 1, label: "Catálogo de assets" });
-    const catalog = await AssetCatalog.load();
-
-    if (catalog) {
+    const preloader = new RacePreloader(options.onProgress);
+    let assetManager: AssetManager | null = null;
+    let runtime: GameRuntime | null = null;
+    try {
+      assetManager = await AssetManager.create();
+      preloader.markCatalogReady();
       const theme = options.trackDefinition.baked.blueprint.theme;
       /**
        * Every livery the grid will ask for, so none of them downloads mid-race.
@@ -607,21 +592,39 @@ export class GameRuntime {
         options.kartDefinition.livery ?? "NONE",
         ...Array.from({ length: RaceConfig.gridSize - 1 }, (_, index) => KartPresets[(index + 1) % KartPresets.length]!.livery ?? "NONE"),
       ];
-      const ids = assetIdsForRace(catalog, theme, liveries);
-      await catalog.preload(scene, ids, (loaded, total, id) => {
-        options.onProgress?.({ loaded, total, label: labelForAsset(id) });
+      const plan = assetManager.planRace({
+        theme,
+        liveries,
+        decalFamilies: FAMILIES_BY_THEME[theme] ?? [],
       });
-    } else {
-      // Not an error: the procedural generator covers every surface. Worth saying out loud, though,
-      // because "the game looks flatter than it should" is otherwise a mystery.
-      console.warn("[assets] manifest unavailable; falling back to procedural textures");
-    }
+      await preloader.prepareAssets(scene, assetManager, plan, labelForAsset);
 
-    options.onProgress?.({ loaded: 1, total: 1, label: "Construyendo circuito" });
-    return new GameRuntime(options, { engine, scene, quality, mobile, hardwareScaling, catalog });
+      runtime = new GameRuntime(options, {
+        engine,
+        scene,
+        quality,
+        mobile,
+        hardwareScaling,
+        assetManager,
+        preloader,
+      });
+      preloader.markWorldReady();
+      const warmupFrames = await preloader.warmup(scene, engine, runtime.track.lighting.shadows);
+      if (qualityManager.commitWarmup(engine, warmupFrames)) scene.render();
+      return runtime;
+    } catch (error) {
+      if (runtime) runtime.dispose();
+      else {
+        assetManager?.dispose();
+        scene.dispose();
+        engine.dispose();
+      }
+      throw error;
+    }
   }
 
   start(): void {
+    this.preloader.assertReady();
     this.input.attach();
     this.audio.start();
     this.installQAHook();
@@ -632,6 +635,8 @@ export class GameRuntime {
         this.engine.stopRenderLoop();
         this.audio.setPaused(true);
       } else if (!this.disposed) {
+        this.accumulator = 0;
+        this.performance.resetTransient();
         this.engine.runRenderLoop(run);
         this.audio.setPaused(this.input.paused);
       }
@@ -689,17 +694,27 @@ export class GameRuntime {
     this.audio.setMuted(muted);
   }
 
+  getReadiness(): RaceReadiness {
+    return this.preloader.readiness;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (typeof window !== "undefined" && this.qaHook) {
+      const qaWindow = window as unknown as { __printRushQA?: PrintRushQA };
+      if (qaWindow.__printRushQA === this.qaHook) delete qaWindow.__printRushQA;
+      this.qaHook = null;
+    }
     this.input.detach();
     this.audio.setMusicPhase("NONE", this.track.baked.blueprint.theme);
     this.items.dispose();
     this.audio.dispose();
+    this.performance.dispose();
     this.instrumentation.dispose();
     this.vfx.dispose();
     this.track.dispose();
-    this.catalog?.dispose();
+    this.assetManager.dispose();
     this.scene.dispose();
     this.engine.dispose();
   }
@@ -708,8 +723,11 @@ export class GameRuntime {
 
   private frame(): void {
     if (this.disposed) return;
-    const delta = Math.min(80, this.engine.getDeltaTime());
+    const rawDelta = this.engine.getDeltaTime();
+    const delta = Math.min(80, rawDelta);
     this.frameMs = this.frameMs * 0.92 + delta * 0.08;
+    // Simulation remains clamped, but telemetry must preserve the hitch we protected it from.
+    this.performance.record(rawDelta);
 
     this.accumulator += delta / 1_000;
     let steps = 0;
@@ -1341,12 +1359,33 @@ export class GameRuntime {
       track: () => ({
         id: this.track.baked.blueprint.id,
         theme: this.track.baked.blueprint.theme,
-        landmarks: this.track.landmarks.map((landmark) => ({ label: landmark.label ?? "", progress: landmark.progress })),
+        landmarks: this.track.landmarks.map((landmark) => {
+          const nodes = this.track.baked.definition.nodes;
+          const index = Math.floor(landmark.progress * nodes.length) % nodes.length;
+          const node = nodes[index]!;
+          const ahead = nodes[(index + 1) % nodes.length]!;
+          const behind = nodes[(index - 1 + nodes.length) % nodes.length]!;
+          const length = Math.hypot(ahead.x - behind.x, ahead.z - behind.z) || 1;
+          const nx = -(ahead.z - behind.z) / length;
+          const nz = (ahead.x - behind.x) / length;
+          const lateral = (landmark.position.x - node.x) * nx + (landmark.position.z - node.z) * nz;
+          return {
+            label: landmark.label ?? "",
+            progress: landmark.progress,
+            side: (lateral >= 0 ? 1 : -1) as -1 | 1,
+            position: {
+              x: landmark.position.x,
+              y: landmark.position.y,
+              z: landmark.position.z,
+            },
+          };
+        }),
         shortcuts: this.track.shortcuts.map((shortcut) => ({ from: shortcut.from, to: shortcut.to })),
         jumps: this.track.jumpPads.map((jump) => jump.progress),
         hazards: this.track.hazards.map((hazard) => ({ kind: hazard.kind, progress: hazard.progress })),
       }),
     };
+    this.qaHook = hook;
     (window as unknown as { __printRushQA?: PrintRushQA }).__printRushQA = hook;
   }
 
@@ -1377,21 +1416,29 @@ export class GameRuntime {
       node.z - tz * back + nz * lateral,
     );
     const target = nodes[(index + Math.round(lookAhead / 2.5)) % count]!;
-    camera.setTarget(new Vector3(target.x + nx * (shot.aimLateral ?? 0), target.y + (shot.aimHeight ?? 1.6), target.z + nz * (shot.aimLateral ?? 0)));
+    camera.setTarget(shot.target
+      ? new Vector3(shot.target.x, shot.target.y, shot.target.z)
+      : new Vector3(target.x + nx * (shot.aimLateral ?? 0), target.y + (shot.aimHeight ?? 1.6), target.z + nz * (shot.aimLateral ?? 0)));
     if (shot.fov !== undefined) camera.fov = shot.fov;
   }
 
   /** The frame's measured cost, for the per-circuit budget the art direction records. */
   private qaStats(): QAStats {
     const scene = this.scene;
+    const pacing = this.performance.snapshot();
     let triangles = 0;
     for (const mesh of scene.getActiveMeshes().data) {
       const abstract = mesh as AbstractMesh & { getTotalIndices?: () => number };
       triangles += (abstract.getTotalIndices?.() ?? 0) / 3;
     }
     return {
-      fps: Math.round(1_000 / this.frameMs),
-      frameMs: Math.round(this.frameMs * 10) / 10,
+      fps: pacing.fps,
+      frameMs: pacing.frameMs,
+      p95Ms: pacing.p95Ms,
+      p99Ms: pacing.p99Ms,
+      worstMs: pacing.worstMs,
+      stutters: pacing.stutters,
+      longTasks: pacing.longTasks,
       drawCalls: this.instrumentation.drawCallsCounter.current,
       activeMeshes: scene.getActiveMeshes().length,
       totalMeshes: scene.meshes.length,
@@ -1402,6 +1449,7 @@ export class GameRuntime {
       particleSystems: scene.particleSystems.length,
       materialLibrary: this.track.materials.size,
       bakedTextures: this.track.materials.bakedTextureCount,
+      raceReady: this.preloader.readiness.raceReady,
     };
   }
 

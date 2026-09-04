@@ -346,7 +346,8 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
   const hall = buildHall(scene, nodes, theme, options.quality, materials, terrain);
 
   // ------------------------------------------------------------------ road
-  const road = buildRoadSurface(scene, nodes, "track-road", { tileLength: 8, shoulder: 0.4 });
+  // Road UVs are measured in metres; the material's `tile` is the authoritative repeat size.
+  const road = buildRoadSurface(scene, nodes, "track-road", { tileLength: 1, shoulder: 0.4 });
   road.material = materials.get({ ...visuals.road, tile: 6 });
   road.receiveShadows = true;
 
@@ -472,11 +473,12 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
 
     // ---------------------------------------------------------------- trackside props
     // Placed by distance so no stretch of road is ever empty. The art bible requires at least four
-    // context-layer objects visible per side; one cluster every 11 m at full density delivers that.
+    // context-layer objects visible per side. Seventeen metres keeps the rhythm while leaving clear
+    // breathing space for the larger authored midground and landmark silhouettes.
     if (node.distance >= nextProp) {
-      nextProp = node.distance + 11 / Math.max(0.35, density);
+      nextProp = node.distance + 17 / Math.max(0.35, density);
       for (const side of [1, -1] as const) {
-        if (random() > 0.86) continue;
+        if (random() > 0.74) continue;
         const table = zoneWeights.get(node.sector) ?? propWeights;
         const spec = table[Math.floor(random() * table.length)]!;
         // Keyed by kind *and* print: two shirt displays with different designs are two sources.
@@ -505,7 +507,7 @@ export function buildTrack(scene: Scene, baked: BakedTrack, options: BuildTrackO
         instance.rotation.y = frame.heading + (side > 0 ? Math.PI : 0) + (random() - 0.5) * 0.3;
         // Seeded scale and tint variation: two identical copies of a prop in one frame is the
         // failure mode the art bible calls out.
-        const scale = 0.82 + random() * 0.5;
+        const scale = 1.02 + random() * 0.55;
         instance.scaling.setAll(scale);
         /**
          * Per-instance variation, but not at the cost of the artwork.

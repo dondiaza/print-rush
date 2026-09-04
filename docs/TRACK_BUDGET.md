@@ -4,24 +4,24 @@ Medido en pantalla con `window.__printRushQA.stats()` (calidad HIGH, 1600 × 900
 con SwiftShader — el FPS de ese entorno no es representativo y no se registra; el resto de cifras sí
 lo son: son las del frame que la GPU del jugador tendría que dibujar).
 
-Fecha: 2026-09-03. Se re-mide al cerrar cada etapa que toque un circuito.
+Fecha: 2026-09-04. Se re-mide al cerrar cada etapa que toque un circuito.
 
 ## Serigrafía (`ink-print-factory`) — circuito dorado
 
-| Métrica | Salida (vista 01) | Momento hero (vista 06) | Límite de trabajo |
-|---|---:|---:|---:|
-| Draw calls | 301 | ~670 | 800 |
-| Mallas activas | 719 | ~2.000 | 2.500 |
-| Mallas totales en escena | 4.730 | 4.730 | 6.000 |
-| Triángulos activos | 1,23 M | 1,1 M | 1,5 M |
-| Materiales en escena | 452 | 452 | — (ver nota) |
-| Materiales de la librería de pista | 125 | 125 | 140 |
-| Texturas | 284 | 284 | 320 |
-| Luces | 6 (key, fill, rim, carrusel, secador, UV) | 6 | 8 |
-| Sistemas de partículas | 15 | 15 | 20 |
-| Texturas horneadas descargadas | 2,29 MB (scope `screenprinting`) | | 3 MB |
+| Métrica | Vista diagnóstica HIGH | Límite de trabajo |
+|---|---:|---:|
+| Draw calls | 354 | 800 |
+| Mallas activas | 1.197 | 2.500 |
+| Mallas totales en escena | 4.618 | 6.000 |
+| Triángulos activos | 0,50 M | 1,5 M |
+| Materiales en escena | 453 | — (ver nota) |
+| Materiales de la librería de pista | 126 | 140 |
+| Texturas | 283 | 320 |
+| Luces | 6 (key, fill, rim, carrusel, secador, UV) | 8 |
+| Sistemas de partículas | 15 | 20 |
+| Bindings de texturas horneadas | 124 | — |
 
-Nota sobre materiales: de los 452, alrededor de 330 pertenecen a los ocho karts y sus pilotos (cada
+Nota sobre materiales: de los 453, alrededor de 330 pertenecen a los ocho karts y sus pilotos (cada
 kart con piloto son ~30 materiales), no al circuito. La librería de pista queda en 125 con el set
 completo; el art bible pedía 40 para la V5 inicial y ese tope se revisa en esta etapa: un set autoral
 con tintas CMYK, cinco zonas y señalización con texto no cabe en 40 sin perder identidad. El tope de
@@ -35,19 +35,26 @@ Dónde está el coste, por orden:
 4. Nave: ~18 draw calls para muros, techo, cerchas, lucernarios, columnas, lámparas y conductos.
 5. Decals (22) y pósters (por diseño, no por póster).
 
-## Los otros cuatro (estándar aplicado: nave, barrera, líneas, puertas, chevrones, meta)
+## Los otros cuatro (set autoral completo)
 
-| Circuito | Draw calls (01) | Mallas activas | Triángulos | Texturas horneadas |
+| Circuito | Draw calls | Mallas activas | Triángulos | Bindings horneados |
 |---|---:|---:|---:|---:|
-| Tienda | 432 | 1.604 | 1,7 M | 1,85 MB |
-| Almacén | 651 | 1.990 | 1,0 M | 1,05 MB |
-| Oficinas | ~450 | ~1.600 | ~1,2 M | 1,13 MB |
-| Salón Manga | ~500 | ~1.800 | ~1,3 M | 1,26 MB |
+| Tienda | 417 | 1.860 | 0,68 M | 72 |
+| Almacén | 348 | 1.319 | 0,56 M | 61 |
+| Oficinas | 332 | 2.021 | 0,67 M | 59 |
+| Salón Manga | 363 | 1.217 | 0,37 M | 56 |
+
+Las cifras son la última tanda `output/visualqa/ref100-*`, por eso no sustituyen un perfil de
+vuelta completa; sirven como caso amplio y comparable. SwiftShader produjo 6–7 FPS y p95 de 250 ms:
+ese tiempo no representa una GPU de usuario, pero ya no se oculta tras el clamp de simulación.
 
 ## Reglas que ya se cumplen y que la puerta de calidad vigila
 
-- Solo se descarga el conjunto común y el circuito actual (`AssetCatalog.raceWeight`, test).
+- Solo se descarga el conjunto común y el circuito actual (`AssetManager.planRace`, test); una
+  categoría o librea crítica ausente bloquea `RACE_READY`, una opcional queda registrada y degrada.
 - Todo lo repetido es instancia con color por instancia; ningún hero se repite en un circuito.
 - Casters de sombra: karts, heroes y mid assets cercanos. La nave y los pequeños no proyectan.
 - Partículas: presupuesto vivo por calidad en `VFXSystem`; el set añade como máximo 15 sistemas de
   30–90 partículas y ninguno en LOW.
+- Los módulos de media distancia usan una sola silueta/material por instancia. La primera versión
+  multi-material sumaba ~120 draws en Tienda y se descartó durante QA.
