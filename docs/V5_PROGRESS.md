@@ -6,12 +6,32 @@ Baseline: `docs/V5_BASELINE_AUDIT.md` (global 2,8/10)
 Normativa visual: `docs/ART_BIBLE_V5.md`
 Puerta de calidad: `docs/V5_QUALITY_GATE.md` (actual 7,6/10)
 
-Estado del build: `npm run check` **verde** — lint, typecheck, **799 tests** y build de los cinco
+Estado del build: `npm run check` **verde** — lint, typecheck, **802 tests** y build de los cinco
 workspaces.
 
 ---
 
 ## DONE
+
+### ETAPA 27 — CAPA GRÁFICA AUTORADA COMPLETA (2026-09-04)
+
+- [x] 5 panoramas originales 4096×2048, uno por mundo, graduados en profundidad y corregidos para
+      cerrar horizontalmente sobre el cilindro
+- [x] 40 carteles en 5 atlas: editorial de tienda, logística, pruebas de serigrafía, estudio creativo
+      y gráfica de convención; sin texto, marcas ni contenido de franquicias
+- [x] 38 sprites ambientales en 4 atlas WebP con alpha: compradores, asistentes, camisetas y plantas
+- [x] 7 wraps originales de kart con familias gráficas realmente distintas y costura UV en cuatro bordes
+- [x] Bake mixto: preserva los 21 másteres autorados byte a byte y mantiene fallback procedural si
+      cualquiera falta; manifiesto con procedencia `openai-imagegen-authored`
+- [x] Presupuestos medidos: ALWAYS 3,72 MB; peor TRACK 2,62 MB; cuatro wraps más pesados 0,67 MB
+- [x] QA de fichero: 311 tests de assets/catálogo en verde, incluyendo alpha, costuras, dimensiones,
+      variedad estructural, rutas del manifiesto y presupuestos
+- [x] QA visual: cinco circuitos HIGH con `RACE_READY` y cero errores; flujo completo local y contra
+      producción, sin overflow y con los wraps nuevos visibles en parrilla
+- [x] Despliegue de producción en `https://kart.pampling.app`; manifiesto y 21/21 WebP verificados
+      por HTTP con tipo y tamaño exactos
+
+Prompts y trazabilidad: `generated-asset-prompts.md`. Dirección consolidada: `ART_DIRECTION.md` §0.
 
 ### ETAPA 26 — SÍNTESIS DE 100 REFERENCIAS Y PROFUNDIDAD DE MUNDO (2026-09-04)
 
@@ -29,7 +49,7 @@ workspaces.
 - [x] QA: cinco circuitos HIGH a 1600×900, Flagship/Manga MEDIUM a 390×844, flujo completo desktop y
       móvil landscape y diez ciclos de memoria. `RACE_READY` en todos, cero errores de consola,
       canvases/hooks limpios y crecimiento mediano de heap 2,66 %
-- [x] Puerta integral: lint, typecheck, 799 tests y cinco builds de producción en verde
+- [x] Puerta integral: lint, typecheck, 802 tests y cinco builds de producción en verde
 
 Evidencia: `output/visualqa/ref100-*`. SwiftShader sigue siendo útil para comparar coste relativo,
 pero sus 6–8 FPS no representan una GPU física.

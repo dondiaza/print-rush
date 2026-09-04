@@ -1,28 +1,28 @@
 {
   "generatedAt": "2026-09-04",
   "generator": "tools/assetgen — mixed procedural and art-directed",
-  "note": "The five production circuit panoramas are original art-directed image-generation masters, reviewed for franchise independence and baked as seam-safe WebP. Greybox, materials, decals, wraps, posters, sprites and icons remain deterministic procedural assets. See docs/ART_DIRECTION.md section 0 for provenance and constraints.",
+  "note": "The five production circuit panoramas, five poster atlases, four ambient sprite atlases and seven kart wraps are original art-directed image-generation masters, reviewed for franchise independence and baked as optimised WebP. Greybox, materials, decals and icons remain deterministic procedural assets. See docs/ART_DIRECTION.md section 0 for provenance and constraints.",
   "counts": {
     "materials": 35,
     "decals": 21,
     "wraps": 7,
     "backdrops": 6,
     "icons": 23,
-    "posters": 30,
-    "sprites": 37,
+    "posters": 40,
+    "sprites": 38,
     "files": 149,
     "atlases": 10
   },
   "bytesByScope": {
-    "common": 5767401,
-    "store": 1777121,
-    "warehouse": 994901,
-    "screenprinting": 2321757,
-    "office": 1065463,
-    "manga": 1560352,
+    "common": 5734478,
+    "store": 1681937,
+    "warehouse": 1019315,
+    "screenprinting": 2010228,
+    "office": 1038545,
+    "manga": 1753649,
     "greybox": 128768
   },
-  "totalBytes": 13615763,
+  "totalBytes": 13366920,
   "assets": [
     {
       "id": "backdrop_greybox_panorama",
@@ -411,13 +411,13 @@
     {
       "id": "kart_wrap_comic_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_comic_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_comic_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 21631,
+      "bytes": 140828,
       "usage": "kart livery \"comic\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -425,13 +425,13 @@
     {
       "id": "kart_wrap_neon_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_neon_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_neon_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 117732,
+      "bytes": 155160,
       "usage": "kart livery \"neon\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -439,13 +439,13 @@
     {
       "id": "kart_wrap_pampling_racing_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_pampling_racing_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_pampling_racing_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 188408,
+      "bytes": 166082,
       "usage": "kart livery \"pampling_racing\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -453,13 +453,13 @@
     {
       "id": "kart_wrap_retro_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_retro_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_retro_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 232495,
+      "bytes": 96910,
       "usage": "kart livery \"retro\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -467,13 +467,13 @@
     {
       "id": "kart_wrap_screenprint_cmyk_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_screenprint_cmyk_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_screenprint_cmyk_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 18266,
+      "bytes": 213658,
       "usage": "kart livery \"screenprint_cmyk\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -481,13 +481,13 @@
     {
       "id": "kart_wrap_warehouse_express_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_warehouse_express_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_warehouse_express_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 425261,
+      "bytes": 115126,
       "usage": "kart livery \"warehouse_express\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -495,13 +495,13 @@
     {
       "id": "kart_wrap_wituka_surf_basecolor",
       "category": "kart-wrap",
-      "sourceFile": "assets/common/wraps/kart_wrap_wituka_surf_basecolor.png",
+      "sourceFile": "assets/common/wraps/kart_wrap_wituka_surf_basecolor.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1024,
       "height": 1024,
       "hasAlpha": false,
-      "bytes": 147897,
+      "bytes": 165506,
       "usage": "kart livery \"wituka_surf\", mapped to the hull UV (U around, V nose to tail)",
       "download": "kart",
       "status": "baked"
@@ -2052,14 +2052,14 @@
       "id": "poster_manga_atlas",
       "category": "poster",
       "circuit": "manga",
-      "sourceFile": "assets/tracks/manga/poster_manga_atlas.png",
+      "sourceFile": "assets/tracks/manga/poster_manga_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1927,
       "height": 1155,
       "hasAlpha": true,
-      "bytes": 212132,
-      "usage": "8 original wall posters for manga, addressed by frame",
+      "bytes": 314570,
+      "usage": "10 original wall posters for manga, addressed by frame",
       "frames": {
         "poster_manga_01": {
           "x": 1,
@@ -2140,6 +2140,26 @@
           "v0": 0.5008658008658009,
           "u1": 0.5991177996886352,
           "v1": 0.9987012987012988
+        },
+        "poster_manga_09": {
+          "x": 1156,
+          "y": 578,
+          "width": 384,
+          "height": 576,
+          "u0": 0.6001556824078879,
+          "v0": 0.5008658008658009,
+          "u1": 0.7989102231447847,
+          "v1": 0.9987012987012988
+        },
+        "poster_manga_10": {
+          "x": 1541,
+          "y": 578,
+          "width": 384,
+          "height": 576,
+          "u0": 0.7999481058640374,
+          "v0": 0.5008658008658009,
+          "u1": 0.9987026466009341,
+          "v1": 0.9987012987012988
         }
       },
       "download": "track",
@@ -2149,14 +2169,14 @@
       "id": "poster_office_atlas",
       "category": "poster",
       "circuit": "office",
-      "sourceFile": "assets/tracks/office/poster_office_atlas.png",
+      "sourceFile": "assets/tracks/office/poster_office_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1927,
-      "height": 290,
+      "height": 579,
       "hasAlpha": true,
-      "bytes": 59872,
-      "usage": "5 original wall posters for office, addressed by frame",
+      "bytes": 32954,
+      "usage": "6 original wall posters for office, addressed by frame",
       "frames": {
         "poster_office_01": {
           "x": 1,
@@ -2164,9 +2184,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.0007784120394395433,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.1995329527763363,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_office_02": {
           "x": 386,
@@ -2174,9 +2194,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.200570835495589,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.3993253762324857,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_office_03": {
           "x": 771,
@@ -2184,9 +2204,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.40036325895173847,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.5991177996886352,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_office_04": {
           "x": 1156,
@@ -2194,9 +2214,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.6001556824078879,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.7989102231447847,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_office_05": {
           "x": 1541,
@@ -2204,9 +2224,19 @@
           "width": 384,
           "height": 288,
           "u0": 0.7999481058640374,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.9987026466009341,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
+        },
+        "poster_office_06": {
+          "x": 1,
+          "y": 290,
+          "width": 384,
+          "height": 288,
+          "u0": 0.0007784120394395433,
+          "v0": 0.501727115716753,
+          "u1": 0.1995329527763363,
+          "v1": 0.9974093264248705
         }
       },
       "download": "track",
@@ -2216,14 +2246,14 @@
       "id": "poster_screenprinting_atlas",
       "category": "poster",
       "circuit": "screenprinting",
-      "sourceFile": "assets/tracks/screenprinting/poster_screenprinting_atlas.png",
+      "sourceFile": "assets/tracks/screenprinting/poster_screenprinting_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1927,
       "height": 771,
       "hasAlpha": true,
-      "bytes": 538599,
-      "usage": "6 original wall posters for screenprinting, addressed by frame",
+      "bytes": 227070,
+      "usage": "8 original wall posters for screenprinting, addressed by frame",
       "frames": {
         "poster_screenprinting_01": {
           "x": 1,
@@ -2284,6 +2314,26 @@
           "v0": 0.5012970168612192,
           "u1": 0.1995329527763363,
           "v1": 0.9980544747081712
+        },
+        "poster_screenprinting_07": {
+          "x": 386,
+          "y": 386,
+          "width": 384,
+          "height": 384,
+          "u0": 0.200570835495589,
+          "v0": 0.5012970168612192,
+          "u1": 0.3993253762324857,
+          "v1": 0.9980544747081712
+        },
+        "poster_screenprinting_08": {
+          "x": 771,
+          "y": 386,
+          "width": 384,
+          "height": 384,
+          "u0": 0.40036325895173847,
+          "v0": 0.5012970168612192,
+          "u1": 0.5991177996886352,
+          "v1": 0.9980544747081712
         }
       },
       "download": "track",
@@ -2293,14 +2343,14 @@
       "id": "poster_store_atlas",
       "category": "poster",
       "circuit": "store",
-      "sourceFile": "assets/tracks/store/poster_store_atlas.png",
+      "sourceFile": "assets/tracks/store/poster_store_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1927,
       "height": 963,
       "hasAlpha": true,
-      "bytes": 403537,
-      "usage": "6 original wall posters for store, addressed by frame",
+      "bytes": 245544,
+      "usage": "10 original wall posters for store, addressed by frame",
       "frames": {
         "poster_store_01": {
           "x": 1,
@@ -2361,6 +2411,46 @@
           "v0": 0.5010384215991692,
           "u1": 0.1995329527763363,
           "v1": 0.9984423676012462
+        },
+        "poster_store_07": {
+          "x": 386,
+          "y": 482,
+          "width": 384,
+          "height": 480,
+          "u0": 0.200570835495589,
+          "v0": 0.5010384215991692,
+          "u1": 0.3993253762324857,
+          "v1": 0.9984423676012462
+        },
+        "poster_store_08": {
+          "x": 771,
+          "y": 482,
+          "width": 384,
+          "height": 480,
+          "u0": 0.40036325895173847,
+          "v0": 0.5010384215991692,
+          "u1": 0.5991177996886352,
+          "v1": 0.9984423676012462
+        },
+        "poster_store_09": {
+          "x": 1156,
+          "y": 482,
+          "width": 384,
+          "height": 480,
+          "u0": 0.6001556824078879,
+          "v0": 0.5010384215991692,
+          "u1": 0.7989102231447847,
+          "v1": 0.9984423676012462
+        },
+        "poster_store_10": {
+          "x": 1541,
+          "y": 482,
+          "width": 384,
+          "height": 480,
+          "u0": 0.7999481058640374,
+          "v0": 0.5010384215991692,
+          "u1": 0.9987026466009341,
+          "v1": 0.9984423676012462
         }
       },
       "download": "track",
@@ -2370,14 +2460,14 @@
       "id": "poster_warehouse_atlas",
       "category": "poster",
       "circuit": "warehouse",
-      "sourceFile": "assets/tracks/warehouse/poster_warehouse_atlas.png",
+      "sourceFile": "assets/tracks/warehouse/poster_warehouse_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1927,
-      "height": 290,
+      "height": 579,
       "hasAlpha": true,
-      "bytes": 25634,
-      "usage": "5 original wall posters for warehouse, addressed by frame",
+      "bytes": 50048,
+      "usage": "6 original wall posters for warehouse, addressed by frame",
       "frames": {
         "poster_warehouse_01": {
           "x": 1,
@@ -2385,9 +2475,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.0007784120394395433,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.1995329527763363,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_warehouse_02": {
           "x": 386,
@@ -2395,9 +2485,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.200570835495589,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.3993253762324857,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_warehouse_03": {
           "x": 771,
@@ -2405,9 +2495,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.40036325895173847,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.5991177996886352,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_warehouse_04": {
           "x": 1156,
@@ -2415,9 +2505,9 @@
           "width": 384,
           "height": 288,
           "u0": 0.6001556824078879,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.7989102231447847,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
         },
         "poster_warehouse_05": {
           "x": 1541,
@@ -2425,9 +2515,19 @@
           "width": 384,
           "height": 288,
           "u0": 0.7999481058640374,
-          "v0": 0.005172413793103448,
+          "v0": 0.0025906735751295338,
           "u1": 0.9987026466009341,
-          "v1": 0.9948275862068966
+          "v1": 0.49827288428324695
+        },
+        "poster_warehouse_06": {
+          "x": 1,
+          "y": 290,
+          "width": 384,
+          "height": 288,
+          "u0": 0.0007784120394395433,
+          "v0": 0.501727115716753,
+          "u1": 0.1995329527763363,
+          "v1": 0.9974093264248705
         }
       },
       "download": "track",
@@ -2437,13 +2537,13 @@
       "id": "sprite_crowd_attendee_atlas",
       "category": "sprite",
       "circuit": "manga",
-      "sourceFile": "assets/tracks/manga/sprite_crowd_attendee_atlas.png",
+      "sourceFile": "assets/tracks/manga/sprite_crowd_attendee_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1536,
       "height": 640,
       "hasAlpha": true,
-      "bytes": 52917,
+      "bytes": 143776,
       "usage": "16 crowd_attendee billboard sprites with alpha, 192x320 cells",
       "frames": {
         "crowd_attendee_01_front": {
@@ -2573,13 +2673,13 @@
       "id": "sprite_crowd_shopper_atlas",
       "category": "sprite",
       "circuit": "store",
-      "sourceFile": "assets/tracks/store/sprite_crowd_shopper_atlas.png",
+      "sourceFile": "assets/tracks/store/sprite_crowd_shopper_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1536,
       "height": 640,
       "hasAlpha": true,
-      "bytes": 36749,
+      "bytes": 99558,
       "usage": "10 crowd_shopper billboard sprites with alpha, 192x320 cells",
       "frames": {
         "crowd_shopper_01_front": {
@@ -2666,13 +2766,13 @@
     {
       "id": "sprite_hanging_shirt_atlas",
       "category": "sprite",
-      "sourceFile": "assets/common/sprites/sprite_hanging_shirt_atlas.png",
+      "sourceFile": "assets/common/sprites/sprite_hanging_shirt_atlas.webp",
       "generated": true,
-      "generator": "procedural",
+      "generator": "openai-imagegen-authored",
       "width": 1536,
       "height": 320,
       "hasAlpha": true,
-      "bytes": 75584,
+      "bytes": 75358,
       "usage": "6 hanging_shirt billboard sprites with alpha, 256x320 cells",
       "frames": {
         "hanging_shirt_01": {
@@ -2731,14 +2831,14 @@
     {
       "id": "sprite_plant_atlas",
       "category": "sprite",
-      "sourceFile": "assets/common/sprites/sprite_plant_atlas.png",
+      "sourceFile": "assets/common/sprites/sprite_plant_atlas.webp",
       "generated": true,
-      "generator": "procedural",
-      "width": 1280,
+      "generator": "openai-imagegen-authored",
+      "width": 1536,
       "height": 320,
       "hasAlpha": true,
-      "bytes": 67851,
-      "usage": "5 plant billboard sprites with alpha, 256x320 cells",
+      "bytes": 133574,
+      "usage": "6 plant billboard sprites with alpha, 256x320 cells",
       "frames": {
         "plant_01": {
           "x": 0,
@@ -2774,14 +2874,21 @@
           "width": 256,
           "height": 320,
           "cell": 4
+        },
+        "plant_06": {
+          "x": 1280,
+          "y": 0,
+          "width": 256,
+          "height": 320,
+          "cell": 5
         }
       },
       "grid": {
         "cellWidth": 256,
         "cellHeight": 320,
-        "columns": 5,
+        "columns": 6,
         "rows": 1,
-        "count": 5
+        "count": 6
       },
       "download": "always",
       "status": "baked"

@@ -8,27 +8,27 @@ modela, qué se textura, qué se resuelve con sprite, con decal o con fondo, y c
 
 ## 0. ESTADO DE LAS CAPACIDADES — LEER PRIMERO
 
-Este proyecto **no tiene ninguna herramienta de generación de imágenes por IA disponible** en el
-entorno de desarrollo. Se verificó el 2026-09-02: no hay modelo de difusión, ni API de imagen, ni
-conector gráfico. `DesignSync` produce sistemas de diseño en HTML, no arte rasterizado.
-
-Consecuencia directa, y hay que tenerla presente al leer el resto:
+Desde el 2026-09-04 el proyecto usa un pipeline **mixto**: las imágenes de alto impacto se autoran
+con generación de imagen, se revisan visualmente, se recortan/compensan para su uso real y se
+hornean como WebP; los mapas que exigen precisión matemática siguen siendo procedurales. El
+generador procedural permanece como fallback cuando un máster autorado no existe.
 
 | Clase de asset | Cómo se produce hoy | Estado |
 |---|---|---|
 | Materiales tileables | **Generación procedural offline** a fichero real | Resuelto |
 | Decals (tinta, arañazos, suciedad, cinta) | Generación procedural offline con alpha | Resuelto |
-| Wraps de kart | Generación procedural offline | Resuelto |
-| Fondos panorámicos | Generación procedural offline | Resuelto |
+| Wraps de kart | 7 másteres originales autorados + ajuste de costura UV | Resuelto |
+| Fondos panorámicos | 5 másteres originales autorados, 4096×2048 y costura 360° | Resuelto |
 | Geometría (karts, personajes, props, heroes) | Modelada por código con el toolkit de loft | Resuelto |
-| **Ilustración**: pósters, portadas, merchandising ficticio | — | **Bloqueado** |
-| **Sprites de público y NPC ilustrados** | — | **Bloqueado** |
-| **Retratos de avatar estilizados desde foto** | — | **Bloqueado** |
+| Ilustración: pósters y señalética ficticia | 5 atlas autorados, 40 diseños | Resuelto |
+| Sprites de público, producto y vegetación | 4 atlas autorados, 38 recortes | Resuelto |
+| Retratos de avatar desde foto | Procesado local existente; no forma parte de este pase | Resuelto |
 | **Logotipos de marca reales** | No hay ficheros oficiales en el repo | **Bloqueado** |
 
-Lo bloqueado necesita, o un modelo de imagen, o un artista, o los ficheros de marca. El pipeline
-está construido para que en cualquiera de esos tres casos **sea sustituir un fichero**, sin tocar
-código: cada asset tiene una entrada en el manifiesto, un nombre estable y un fallback.
+Las 100 referencias aportadas se analizaron como lenguaje abstracto —composición, escala, ritmo,
+profundidad y legibilidad—, no como catálogo para copiar. No se reprodujo ningún personaje,
+vehículo, circuito, objeto, icono, logotipo ni geometría identificable de otra franquicia. Los
+prompts y la correspondencia de salidas se registran en `generated-asset-prompts.md`.
 
 **Regla dura:** nadie declara un asset como generado si el fichero no existe en el repositorio. El
 manifiesto se genera desde el disco, no a mano.
@@ -50,8 +50,7 @@ Lo que define el estilo, en orden de importancia:
 
 ### Descripción base reutilizable
 
-Cuando exista capacidad de generación, todo prompt de asset arranca de esta base para que el set no
-se disperse en cinco estilos:
+Todo prompt de asset autorado arranca de esta base para que el set no se disperse en cinco estilos:
 
 > Stylized semi-realistic arcade racing game asset, polished commercial videogame art direction,
 > believable materials, slightly exaggerated proportions, clean readable silhouette, colourful but
@@ -87,8 +86,9 @@ Cuando el volumen no se percibe a la distancia a la que se ve: público, plantas
 lejos, siluetas de fondo, pequeño merchandising.
 
 Nunca en primer plano. Orientación billboard solo cuando el objeto es aproximadamente simétrico en
-planta. **Bloqueado hasta que exista generación de imagen** para la variante ilustrada; hoy el
-público se resuelve con geometría simplificada instanciada (`PropLibrary.CROWD`).
+planta. Los cuatro atlas WebP cubren asistentes, compradores, camisetas colgadas y plantas. El
+público muy cercano conserva geometría simplificada (`PropLibrary.CROWD`) para que el plano no se
+delate cuando el kart pasa junto a él.
 
 ### TIPO C — Decals
 
@@ -106,9 +106,10 @@ octavas más variación de baja frecuencia, no con un patrón pequeño repetido.
 
 ### TIPO E — Fondos y panoramas
 
-Para lo que está lo bastante lejos como para que la geometría sea absurda. Skybox cilíndrico o
-planos distantes con parallax. Generados proceduralmente como gradiente vertical más bandas de
-silueta; la variante ilustrada está bloqueada.
+Para lo que está lo bastante lejos como para que la geometría sea absurda. Los cinco mundos de
+producción usan panoramas cilíndricos autorados, graduados de techo claro a base oscura y corregidos
+para cerrar horizontalmente. Greybox conserva el gradiente procedural como fallback y herramienta
+de diagnóstico.
 
 ---
 
@@ -123,21 +124,21 @@ No se genera todo a 4K. La resolución la decide el tamaño en pantalla, no la i
 | Decal | 512 | RGBA |
 | Wrap de kart | 1024 | RGB |
 | Atlas de props pequeños | 1024 | RGBA |
-| Panorama de fondo | 2048 × 1024 | RGB |
+| Panorama de fondo | 4096 × 2048 | RGB WebP |
 | Icono de UI | 128 | RGBA |
 
 **Presupuesto de descarga:** los assets se cargan **por circuito**, nunca los cinco a la vez.
 
 ```
-ALWAYS  (materiales compartidos + iconos + ambiente)       objetivo < 4 MB   real 3,65 MB
-TRACK   (materiales, panorama, decals, carteles, sprites)  objetivo < 3 MB   real ≤ 2,41 MB
-KART    (las liveries que hay en la parrilla)              objetivo < 1,2 MB real ≤ 0,95 MB
+ALWAYS  (materiales compartidos + iconos + ambiente)       objetivo < 4 MB   real 3,72 MB
+TRACK   (materiales, panorama, decals, carteles, sprites)  objetivo < 3 MB   real ≤ 2,62 MB
+KART    (las liveries que hay en la parrilla)              objetivo < 1,2 MB real ≤ 0,67 MB
 ```
 
-El circuito piloto (serigrafía) es el más pesado con 2,41 MB, y una carrera allí descarga 6,94 MB en
+El circuito piloto (serigrafía) es el más pesado con 2,62 MB, y una carrera allí descarga 7,00 MB en
 total. **No se comprueba un total agregado**: una versión anterior de los tests asertaba «menos de
-7 MB por carrera», un número que no aparece en ninguna parte de este documento y que serigrafía roza
-por 60 KB. Los límites declarados son por nivel; eso es lo que se verifica.
+7 MB por carrera», un número que no aparece en ninguna parte de este documento. Los límites
+declarados son por nivel; eso es lo que se verifica.
 
 **Tres niveles, no dos.** La primera versión de esta tabla metía decals y wraps en `COMMON`, y el
 manifiesto sólo tenía un campo `circuit`: todo lo que no pertenecía a un circuito contaba como
@@ -145,7 +146,7 @@ compartido. Eso daba 5,64 MB de "compartido" que **ningún jugador ha descargado
 carrera se lleva un circuito, las cuatro o cinco familias de decals que ese tema esparce, y las
 liveries de su propia parrilla — no las siete. El manifiesto lleva ahora un campo `download` con el
 nivel, y `AssetCatalog.raceWeight()` calcula lo que de verdad se pide. Peor carrera medida:
-**6,31 MB** en el taller de serigrafía, con cuatro liveries distintas.
+**7,00 MB** en el taller de serigrafía, con las cuatro liveries más pesadas.
 
 Una regla que se comprueba en los tests: **un tema sólo puede nombrar assets del conjunto
 compartido o de su propio circuito.** `mat_paintedmetal_press` es un fichero real, y nombrarlo desde
@@ -164,11 +165,14 @@ apps/web/public/assets/
   common/
     materials/    mat_<clase>_<variante>_{basecolor,normal,roughness}.png
     decals/       decal_<familia>_<nn>.png
-    wraps/        kart_wrap_<nombre>_basecolor.png
+    wraps/        kart_wrap_<nombre>_basecolor.webp
+    sprites/      sprite_{hanging_shirt,plant}_atlas.webp
     ui/           ui_icon_<nombre>.png
   tracks/
     <circuito>/
       backdrop_<circuito>_panorama.webp   (greybox sigue en .png)
+      poster_<circuito>_atlas.webp
+      sprite_<familia>_atlas.webp         (tienda y convención)
       materials/  mat_<clase>_<variante>_*.png
   assets.manifest.json
 ```
@@ -370,13 +374,12 @@ la Sticker Mine y el Size Tag los dos «S». Cada icono es una silueta legible a
 color de acento, dibujada a partir de los objetos del propio juego: una camiseta, una caja de envío,
 una percha, una rasqueta.
 
-**30 carteles** en cinco familias, una por circuito. Composiciones gráficas —barras, bloques,
-semitonos, marcas de registro—, que es el vocabulario de la serigrafía y resulta ser el vocabulario
-correcto para este juego. No son ilustraciones, y eso es un límite declarado, no un descuido: sin
-generación de imagen, un póster ilustrado no se puede producir aquí. Lo que sí tienen es
-composición: elemento focal, margen, jerarquía y una regla al pie.
+**40 carteles** en cinco familias, una por circuito. Son ilustraciones originales con lenguaje propio:
+gráfica editorial para la tienda, señalética cinética para el almacén, pruebas de tinta para el
+taller, composición modernista para la oficina y energía de viñeta para la convención. El packer
+procedural conserva una alternativa determinista si falta un máster.
 
-**37 sprites** con alpha: público de convención y de tienda (frente y espalda), plantas en maceta y
+**38 sprites** con alpha: público de convención y de tienda, plantas en maceta y
 camisetas colgadas.
 
 ### Dos empaquetadores, porque hay dos consumidores
@@ -394,7 +397,7 @@ transparente dentro de la celda, y eso está asertado.
 ### Coste
 
 Un cartel es un quad cuyas UV se reescriben al frame; los quads que comparten diseño se fusionan. Una
-pared de treinta carteles sacados de seis diseños cuesta **seis draw calls y un material**. El
+pared de treinta carteles sacados de diez diseños cuesta como máximo **diez draw calls y un material**. El
 público de 160 personas cuesta **uno**. El prop `CROWD` en 3D se mantiene con peso bajo para las
 figuras pegadas a la pista, donde un sprite plano se delataría: modelado de cerca, sprites para la
 masa, nada más allá del punto en que una persona son dos píxeles.

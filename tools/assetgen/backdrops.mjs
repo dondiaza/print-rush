@@ -4,14 +4,14 @@ import { clamp01, hex, mixColor, scaleColor } from "./raster.mjs";
 /**
  * Panoramic backdrops.
  *
- * These replace the flat clear-colour that sat behind every circuit. Each is a 2048 × 1024
+ * These replace the flat clear-colour that sat behind every circuit. Each fallback is a 4096 × 2048
  * cylindrical panorama: a vertical gradient for the volume of the space, then layered silhouette
  * bands for depth, then practical lights.
  *
- * Silhouettes rather than illustration is a deliberate limit, not an accident — there is no image
- * generation available, and a silhouette layer is the one thing that genuinely reads at backdrop
- * distance without illustration. The parallax comes from three bands at different heights and
- * contrasts: `far` is barely separated from the sky, `near` is almost solid.
+ * Production uses the authored WebP masters. These silhouette versions remain deliberately simple
+ * fallbacks, so a missing bitmap degrades to a readable world instead of blocking the race. Their
+ * parallax comes from three bands at different heights and contrasts: `far` is barely separated
+ * from the sky, `near` is almost solid.
  *
  * Horizontal wrap: U is periodic, so every noise call uses the periodic generators and every
  * feature is placed with a wrapped X.

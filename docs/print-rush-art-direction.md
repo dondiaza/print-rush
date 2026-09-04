@@ -56,6 +56,15 @@ Las 100 imágenes del paquete se usan como referencias de lenguaje visual: compo
 - Móvil reduce densidad y distancia, nunca el contraste funcional de ROAD/SHOULDER/KERB.
 - Las aperturas de techo sustituyen superficie opaca: añaden profundidad sin multiplicar materiales o luces.
 
+## Capa gráfica autorada
+
+- Cinco panoramas 4096×2048 construyen un horizonte propio para cada mundo y cierran en 360°.
+- Cuarenta carteles reparten lenguaje editorial, logística, tinta, estudio y cómic sin texto ni marcas copiadas.
+- Treinta y ocho sprites ambientan tienda y convención con público, producto y vegetación sobre alpha.
+- Siete wraps cambian de verdad la lectura del kart: brochazos, ola, registro CMYK, logística, viñeta, retro y neón.
+- La producción queda en WebP y el bake preserva los másteres byte a byte; el contenido procedural es fallback.
+- Las referencias se usaron sólo para principios de composición, ritmo, profundidad y legibilidad. Todo el arte es original del universo Print Rush.
+
 ## Criterio de éxito
 
 Un fotograma sin HUD debe permitir reconocer el mundo, localizar la ruta y anticipar la siguiente decisión. Una vuelta debe sentirse como una secuencia de lugares, no como el mismo almacén recoloreado. La mejora se valida con comparativas desktop/móvil, los cinco temas, tests/build y métricas de escena.

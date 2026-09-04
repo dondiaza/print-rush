@@ -51,16 +51,27 @@ function pathOf(asset: ManifestAsset): string {
   return join(ASSETS, "..", asset.sourceFile);
 }
 
+type DecodedImage = ReturnType<typeof decodePng>;
+const authoredRasterCache = new Map<string, DecodedImage>();
+await Promise.all(
+  manifest.assets
+    .filter((asset) => !asset.sourceFile.endsWith(".png"))
+    .map(async (asset) => {
+      const { data, info } = await sharp(pathOf(asset)).raw().toBuffer({ resolveWithObject: true });
+      authoredRasterCache.set(asset.id, {
+        width: info.width,
+        height: info.height,
+        channels: info.channels,
+        pixels: data,
+      });
+    }),
+);
+
 function load(asset: ManifestAsset) {
+  const authored = authoredRasterCache.get(asset.id);
+  if (authored) return authored;
   const path = pathOf(asset);
   return decodePng(readFileSync(path));
-}
-
-/** WebP is reserved for the five large authored panoramas; Sharp expands it for pixel QA. */
-async function loadBackdrop(asset: ManifestAsset) {
-  if (asset.sourceFile.endsWith(".png")) return load(asset);
-  const { data, info } = await sharp(pathOf(asset)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { width: info.width, height: info.height, channels: info.channels, pixels: data };
 }
 
 /**
@@ -80,6 +91,29 @@ function statsOf(asset: ManifestAsset): ImageStatistics {
 /** The widest per-channel spread. Zero means the generator returned a constant. */
 function channelRange(stats: ImageStatistics): number {
   return Math.max(...stats.max.map((max, index) => max - stats.min[index]!));
+}
+
+/** Coarse luminance layout, deliberately ignoring hue so a simple recolour keeps the same signature. */
+function spatialLuminanceSignature(asset: ManifestAsset): string {
+  const { width, height, channels, pixels } = load(asset);
+  const grid = 8;
+  const cells: number[] = [];
+  for (let row = 0; row < grid; row += 1) {
+    for (let column = 0; column < grid; column += 1) {
+      let total = 0;
+      let samples = 0;
+      for (let y = Math.floor((row * height) / grid); y < Math.floor(((row + 1) * height) / grid); y += 4) {
+        for (let x = Math.floor((column * width) / grid); x < Math.floor(((column + 1) * width) / grid); x += 4) {
+          const offset = (y * width + x) * channels;
+          total += pixels[offset]! * 0.2126 + pixels[offset + 1]! * 0.7152 + pixels[offset + 2]! * 0.0722;
+          samples += 1;
+        }
+      }
+      cells.push(total / samples);
+    }
+  }
+  const mean = cells.reduce((total, value) => total + value, 0) / cells.length;
+  return cells.map((value) => Math.round((value - mean) / 12)).join("|");
 }
 
 const byCategory = (category: string) => manifest.assets.filter((asset) => asset.category === category);
@@ -287,10 +321,7 @@ describe("kart wraps", () => {
    * per-channel spreads. Real graphic differences show up as different colour distributions.
    */
   it("differs in design, not only in colour", () => {
-    const signatures = wraps.map((asset) => {
-      const stats = statsOf(asset);
-      return stats.mean.map((_mean, index) => Math.round((stats.max[index]! - stats.min[index]!) / 16)).join("|");
-    });
+    const signatures = wraps.map(spatialLuminanceSignature);
     expect(new Set(signatures).size).toBeGreaterThanOrEqual(4);
   });
 
@@ -312,7 +343,7 @@ describe("backdrops", () => {
   });
 
   it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s wraps horizontally", async (id, asset) => {
-    const image = await loadBackdrop(asset);
+    const image = load(asset);
     // A cylindrical panorama must join at the seam; vertically it does not, and must not be checked.
     const wrap = edgeDifference(image, "horizontal");
     const interior = interiorDifference(image, "horizontal");
@@ -333,7 +364,7 @@ describe("backdrops", () => {
    * "fondo plano" the brief prohibits.
    */
   it.each(backdrops.map((asset) => [asset.id, asset] as const))("%s has real vertical depth", async (id, asset) => {
-    const image = await loadBackdrop(asset);
+    const image = load(asset);
     const { width, height, channels, pixels } = image;
     const bandMean = (fromRow: number, toRow: number) => {
       let total = 0;

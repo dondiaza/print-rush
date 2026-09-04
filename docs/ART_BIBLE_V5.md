@@ -272,9 +272,11 @@ Un material nuevo es un draw call nuevo. Regla dura:
 | Normal maps | mitad del albedo | mitad del albedo |
 | Screens / señalética | 512 | 256 |
 
-Todas las texturas de la V5 son **procedurales, generadas en canvas al arranque y cacheadas**. No
-hay descarga de assets binarios: es lo que permite que el juego siga siendo un export estático y
-arranque rápido. Se generan una vez por clase de material y se comparten.
+La V5 usa un pipeline **mixto y horneado**. Materiales PBR, decals e iconos se generan de forma
+procedural offline; panoramas, cartelería, sprites ambientales y wraps de producción usan másteres
+originales autorados. Todo se publica como asset estático descrito por manifiesto, se precarga por
+circuito y conserva generación procedural en runtime como fallback. Los límites reales de descarga
+están en `ART_DIRECTION.md` §3.
 
 ---
 

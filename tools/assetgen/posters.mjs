@@ -10,11 +10,10 @@ import { clamp01, hex, mixColor, scaleColor } from "./raster.mjs";
  * without its graphics is a warehouse; a print workshop without its test prints and pantone charts
  * is a garage.
  *
- * These are graphic compositions, not illustrations, and that is a deliberate limit stated honestly:
- * there is no image generation in this environment, so a poster here is built from bars, blocks,
- * halftones and geometric marks — the vocabulary of screen printing, which happens to be the right
- * vocabulary for this game. What they must not be is a photograph, a copied design, or a rectangle
- * of noise; each is composed, with a focal element, a margin and a hierarchy.
+ * Production uses the authored WebP sheets. These compositions are the deterministic fallback:
+ * bars, blocks, halftones and geometric marks — the vocabulary of screen printing, which happens
+ * to be the right vocabulary for this game. A missing authored atlas therefore remains a composed,
+ * readable wall rather than a broken texture or an empty rectangle.
  *
  * Five families, one per circuit, each with several variants so a wall is never one poster repeated.
  * Packed into per-circuit atlases.
@@ -68,7 +67,7 @@ export const POSTER_FAMILIES = {
    * collection posters are built.
    */
   store: {
-    count: 6,
+    count: 10,
     size: { width: 384, height: 480 },
     build: ({ seed, index }) => {
       const random = makeRandom(seed);
@@ -120,7 +119,7 @@ export const POSTER_FAMILIES = {
    * makes the pilot circuit say "workshop" in the two seconds the brief asks for.
    */
   screenprinting: {
-    count: 6,
+    count: 8,
     size: { width: 384, height: 384 },
     build: ({ seed, index }) => {
       const random = makeRandom(seed);
@@ -189,7 +188,7 @@ export const POSTER_FAMILIES = {
    * labels. Nothing decorative, which is what makes it read as a real warehouse.
    */
   warehouse: {
-    count: 5,
+    count: 6,
     size: { width: 384, height: 288 },
     build: ({ seed, index }) => {
       const random = makeRandom(seed);
@@ -253,7 +252,7 @@ export const POSTER_FAMILIES = {
    * because that is what the difference between a studio wall and a factory wall looks like.
    */
   office: {
-    count: 5,
+    count: 6,
     size: { width: 384, height: 288 },
     build: ({ seed, index }) => {
       const random = makeRandom(seed);
@@ -318,7 +317,7 @@ export const POSTER_FAMILIES = {
    * strong central mark, a title bar. No existing character, no existing logo, nothing borrowed.
    */
   manga: {
-    count: 8,
+    count: 10,
     size: { width: 384, height: 576 },
     build: ({ seed, index }) => {
       const random = makeRandom(seed);

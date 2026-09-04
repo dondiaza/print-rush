@@ -16,6 +16,7 @@ Print Rush es un videojuego web 3D de carreras arcade ambientado en el universo 
 - Personaje y kart paramétricos, avatar desde foto procesado localmente, Asset Browser, PWA y perfiles de calidad adaptativos elegidos antes de presentar la carrera.
 - Carga bloqueante real: manifiesto por circuito, assets críticos/opcionales, compilación de shaders, calentamiento GPU y contrato explícito `RACE_READY` antes del 3-2-1.
 - Sets autorales para los cinco circuitos, con landmarks, hazards y arquitectura temática; materiales con UVs físicas y QA visual reproducible.
+- Capa gráfica original por mundo: 5 panoramas 4K, 40 carteles, 38 sprites ambientales y 7 wraps de kart, optimizados en WebP y precargados desde manifiesto.
 
 ## Arranque
 

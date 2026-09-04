@@ -324,7 +324,7 @@ export const SPRITE_FAMILIES = {
   /** Potted plants: office and shop dressing, and the classic alpha-sprite case. */
   plant: {
     scope: "common",
-    count: 5,
+    count: 6,
     facings: ["front"],
     size: { width: 256, height: 320 },
     build: ({ seed }) => plant({ seed }),

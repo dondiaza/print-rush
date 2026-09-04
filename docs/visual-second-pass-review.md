@@ -21,10 +21,10 @@ Revisión ejecutada después de la primera implementación, comparando las captu
   ese parentesco.
 - Los landmarks son geometría code-native fusionada. Ya tienen escala y jerarquía, pero no el nivel
   de modelado, decals únicos y acabado que aportaría un set de assets 3D art-directed por mundo.
-- Karts y pilotos conservan el modelado estilizado existente; esta etapa los integra por contraste y
-  luz, pero no sustituye sus modelos.
-- Los panoramas actuales son fondos de catálogo existentes. Un pase propio por mundo elevaría mucho
-  el horizonte sin copiar ninguna referencia.
+- Karts y pilotos conservan el modelado estilizado existente; los siete wraps sí han recibido arte
+  original y costura UV, pero no se han sustituido las mallas.
+- El horizonte, la cartelería y la ambientación 2.5D ya tienen un pase autorado propio por mundo. Lo
+  pendiente para una futura producción es topología 3D singular, no más bitmap de fondo.
 - Las métricas de tiempo provienen de SwiftShader: sirven para comparar, no para declarar FPS de
   hardware real. Falta perfilado en un PC con GPU y en dispositivos iOS/Android físicos.
 

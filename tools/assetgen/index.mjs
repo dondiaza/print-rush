@@ -23,9 +23,10 @@ import { packAtlas, packGrid } from "./atlas.mjs";
  * inspected, replaced by an artist or an image model without touching code, cached by the CDN, and
  * costs nothing at startup. The runtime generator stays as the fallback.
  *
- * Materials, decals, wraps, atlases and the greybox are deterministic procedural bakes. The five
- * production panoramas are art-directed image-generation masters, preserved byte-for-byte across
- * rebuilds. See `docs/ART_DIRECTION.md` §0 for the provenance and review rules.
+ * Materials, decals, icons and the greybox are deterministic procedural bakes. The five production
+ * panoramas, five poster atlases, four ambient sprite atlases and seven kart wraps are original
+ * art-directed image-generation masters, preserved byte-for-byte across rebuilds. See
+ * `docs/ART_DIRECTION.md` §0 for the provenance and review rules.
  *
  * Run with `npm run assets:build`. Deterministic: a rebuild produces byte-identical files.
  */
@@ -81,6 +82,39 @@ const authoredBackdropFiles = new Map(
     .map((circuit) => {
       const path = join(outputRoot, "tracks", circuit, `backdrop_${circuit}_panorama.webp`);
       return existsSync(path) ? [circuit, readFileSync(path)] : null;
+    })
+    .filter(Boolean),
+);
+
+const authoredPosterFiles = new Map(
+  Object.keys(POSTER_FAMILIES)
+    .map((circuit) => {
+      const path = join(outputRoot, "tracks", circuit, `poster_${circuit}_atlas.webp`);
+      return existsSync(path) ? [circuit, readFileSync(path)] : null;
+    })
+    .filter(Boolean),
+);
+
+const AUTHORED_SPRITE_LOCATIONS = {
+  crowd_attendee: ["tracks", "manga"],
+  crowd_shopper: ["tracks", "store"],
+  hanging_shirt: ["common", "sprites"],
+  plant: ["common", "sprites"],
+};
+const authoredSpriteFiles = new Map(
+  Object.entries(AUTHORED_SPRITE_LOCATIONS)
+    .map(([family, segments]) => {
+      const path = join(outputRoot, ...segments, `sprite_${family}_atlas.webp`);
+      return existsSync(path) ? [family, readFileSync(path)] : null;
+    })
+    .filter(Boolean),
+);
+
+const authoredWrapFiles = new Map(
+  Object.keys(WRAPS)
+    .map((name) => {
+      const path = join(outputRoot, "common", "wraps", `kart_wrap_${name}_basecolor.webp`);
+      return existsSync(path) ? [name, readFileSync(path)] : null;
     })
     .filter(Boolean),
 );
@@ -223,13 +257,17 @@ function bakeWraps() {
     const shade = definition.build({ seed });
     const image = renderRgb(WRAP_SIZE, (u, v) => shade(u, v));
     const id = `kart_wrap_${name}_basecolor`;
-    write(join("common", "wraps", `${id}.png`), image, {
+    const authoredFile = authoredWrapFiles.get(name);
+    const relativePath = join("common", "wraps", `${id}.${authoredFile ? "webp" : "png"}`);
+    const meta = {
       id,
       category: "kart-wrap",
       usage: `kart livery "${name}", mapped to the hull UV (U around, V nose to tail)`,
       // Only the liveries actually on the grid are fetched.
       download: "kart",
-    });
+    };
+    if (authoredFile) writeEncoded(relativePath, authoredFile, { ...image, channels: 3 }, meta, "openai-imagegen-authored");
+    else write(relativePath, image, meta);
     count += 1;
   }
   return count;
@@ -321,14 +359,18 @@ function bakePosters() {
     }
     const { image, frames } = packAtlas(entries, { maxWidth: 2048 });
     const id = `poster_${circuit}_atlas`;
-    write(join("tracks", circuit, `${id}.png`), image, {
+    const authoredFile = authoredPosterFiles.get(circuit);
+    const relativePath = join("tracks", circuit, `${id}.${authoredFile ? "webp" : "png"}`);
+    const meta = {
       id,
       category: "poster",
       circuit,
       usage: `${entries.length} original wall posters for ${circuit}, addressed by frame`,
       frames,
       download: "track",
-    });
+    };
+    if (authoredFile) writeEncoded(relativePath, authoredFile, image, meta, "openai-imagegen-authored");
+    else write(relativePath, image, meta);
   }
   return count;
 }
@@ -372,7 +414,9 @@ function bakeSprites() {
       const { image, frames, grid } = packGrid(entries, { columns: 8 });
       const id = `sprite_${family}_atlas`;
       const folder = scope === "common" ? join("common", "sprites") : join("tracks", scope);
-      write(join(folder, `${id}.png`), image, {
+      const authoredFile = authoredSpriteFiles.get(family);
+      const relativePath = join(folder, `${id}.${authoredFile ? "webp" : "png"}`);
+      const meta = {
         id,
         category: "sprite",
         ...(scope === "common" ? {} : { circuit: scope }),
@@ -380,7 +424,9 @@ function bakeSprites() {
         frames,
         grid,
         download: scope === "common" ? "always" : "track",
-      });
+      };
+      if (authoredFile) writeEncoded(relativePath, authoredFile, image, meta, "openai-imagegen-authored");
+      else write(relativePath, image, meta);
     }
   }
   return count;
@@ -424,9 +470,10 @@ writeFileSync(
       generatedAt: new Date().toISOString().slice(0, 10),
       generator: "tools/assetgen — mixed procedural and art-directed",
       note:
-        "The five production circuit panoramas are original art-directed image-generation masters, "
-        + "reviewed for franchise independence and baked as seam-safe WebP. Greybox, materials, decals, "
-        + "wraps, posters, sprites and icons remain deterministic procedural assets. See "
+        "The five production circuit panoramas, five poster atlases, four ambient sprite atlases and "
+        + "seven kart wraps are original art-directed image-generation masters, reviewed for franchise "
+        + "independence and baked as optimised WebP. Greybox, materials, decals and icons remain "
+        + "deterministic procedural assets. See "
         + "docs/ART_DIRECTION.md section 0 for provenance and constraints.",
       counts: {
         materials,
