@@ -110,6 +110,54 @@ describe("race asset plan", () => {
   });
 });
 
+describe("manifest freshness", () => {
+  /**
+   * The regression this exists for: a browser served its stored manifest without asking, so a
+   * deployment that renamed the panoramas from PNG to WebP left returning players requesting file
+   * names that no longer existed. A required backdrop that 404s fails the whole bundle, which is
+   * correct — reading a manifest older than the files it describes is what was not.
+   */
+  it("revalidates the manifest instead of trusting a stored copy", async () => {
+    const modes: (RequestCache | undefined)[] = [];
+    const fetchFixture = (async (_url: string, init?: RequestInit) => {
+      modes.push(init?.cache);
+      return new Response(JSON.stringify(manifest), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    (await AssetManager.create(fetchFixture)).dispose();
+    (await AssetManager.create(fetchFixture, { refresh: true })).dispose();
+
+    expect(modes).toEqual(["no-cache", "reload"]);
+    expect(modes).not.toContain("force-cache");
+  });
+
+  it("sees the new bundle when a race retries with a refreshed manifest", async () => {
+    const stale: AssetManifest = {
+      ...manifest,
+      assets: manifest.assets.map((entry) =>
+        entry.id === "backdrop_store_panorama"
+          ? { ...entry, sourceFile: "assets/backdrop_store_panorama.legacy.png" }
+          : entry,
+      ),
+    };
+    const fetchFixture = (async (_url: string, init?: RequestInit) => new Response(
+      JSON.stringify(init?.cache === "reload" ? manifest : stale),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as unknown as typeof fetch;
+
+    const first = await AssetManager.create(fetchFixture);
+    expect(first.catalog.url("backdrop_store_panorama")).toBe("/assets/backdrop_store_panorama.legacy.png");
+    first.dispose();
+
+    const refreshed = await AssetManager.create(fetchFixture, { refresh: true });
+    expect(refreshed.catalog.url("backdrop_store_panorama")).toBe("/assets/backdrop_store_panorama.png");
+    refreshed.dispose();
+  });
+});
+
 describe("race readiness gate", () => {
   it("does not report ready until assets, world, shaders, textures and GPU all settled", async () => {
     const progress: number[] = [];

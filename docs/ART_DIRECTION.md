@@ -168,7 +168,7 @@ apps/web/public/assets/
     ui/           ui_icon_<nombre>.png
   tracks/
     <circuito>/
-      backdrop_<circuito>_panorama.png
+      backdrop_<circuito>_panorama.webp   (greybox sigue en .png)
       materials/  mat_<clase>_<variante>_*.png
   assets.manifest.json
 ```
@@ -176,6 +176,13 @@ apps/web/public/assets/
 Nombres descriptivos y estables. Prohibido `image1.png`, `final2.png`, `new.png`,
 `generated-image.png`. El nombre de un asset **no cambia** cuando se sustituye su contenido: eso es
 lo que permite cambiar procedural por ilustrado sin tocar código.
+
+La extensión es parte del nombre. Rebakear los cinco panoramas de PNG a WebP fue un renombrado, y
+un renombrado rompe a cualquier cliente que siga creyendo el manifiesto anterior: pedía los `.png`
+que el despliegue ya no publica, el backdrop es un asset obligatorio y la carrera se quedaba en
+"PISTA NO PREPARADA". Por eso `AssetCatalog.load` revalida el manifiesto en cada arranque en vez de
+aceptar la copia guardada. Si hay que cambiar de formato, sigue siendo la vía correcta — pero es un
+cambio visible en el despliegue, no una sustitución de contenido.
 
 ---
 

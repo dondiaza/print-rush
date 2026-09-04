@@ -63,7 +63,7 @@ import { FrameMonitor } from "@/performance/PerformanceManager";
 import { QualityManager } from "@/performance/QualityManager";
 import type { StoredTrack } from "@/factory/TrackFactory";
 import type { AssetCatalog } from "@/render/AssetCatalog";
-import { AssetManager } from "@/render/AssetManager";
+import { AssetManager, AssetPreparationError } from "@/render/AssetManager";
 import { RacePreloader, type PreloadProgress, type RaceReadiness } from "@/render/RacePreloader";
 import { FAMILIES_BY_THEME } from "@/render/DecalScatter";
 
@@ -578,8 +578,6 @@ export class GameRuntime {
     let assetManager: AssetManager | null = null;
     let runtime: GameRuntime | null = null;
     try {
-      assetManager = await AssetManager.create();
-      preloader.markCatalogReady();
       const theme = options.trackDefinition.baked.blueprint.theme;
       /**
        * Every livery the grid will ask for, so none of them downloads mid-race.
@@ -592,12 +590,37 @@ export class GameRuntime {
         options.kartDefinition.livery ?? "NONE",
         ...Array.from({ length: RaceConfig.gridSize - 1 }, (_, index) => KartPresets[(index + 1) % KartPresets.length]!.livery ?? "NONE"),
       ];
-      const plan = assetManager.planRace({
-        theme,
-        liveries,
-        decalFamilies: FAMILIES_BY_THEME[theme] ?? [],
-      });
-      await preloader.prepareAssets(scene, assetManager, plan, labelForAsset);
+      const prepareBundle = async (refresh: boolean): Promise<AssetManager> => {
+        const manager = await AssetManager.create(fetch, { refresh });
+        try {
+          preloader.markCatalogReady();
+          const plan = manager.planRace({
+            theme,
+            liveries,
+            decalFamilies: FAMILIES_BY_THEME[theme] ?? [],
+          });
+          await preloader.prepareAssets(scene, manager, plan, labelForAsset);
+          return manager;
+        } catch (error) {
+          manager.dispose();
+          throw error;
+        }
+      };
+      try {
+        assetManager = await prepareBundle(false);
+      } catch (error) {
+        /**
+         * One retry, and only for a bundle that failed on names rather than on hardware.
+         *
+         * A client that kept a manifest from an earlier deployment asks for files this one does not
+         * ship, and every attempt fails identically for as long as that copy is believed. Reading
+         * the manifest again past the cache is what turns a dead end into a reload that heals
+         * itself. If the fresh manifest fails too, the failure is real and the race still refuses
+         * to start with an incomplete circuit.
+         */
+        if (!(error instanceof AssetPreparationError)) throw error;
+        assetManager = await prepareBundle(true);
+      }
 
       runtime = new GameRuntime(options, {
         engine,

@@ -126,10 +126,24 @@ export class AssetCatalog {
    * Reads the manifest. Returns null rather than throwing if it cannot be read, because the game
    * runs without it — every material falls back to the procedural generator that shipped before the
    * bake existed.
+   *
+   * The cache mode is part of the contract, not a micro-optimisation. This used to be
+   * `force-cache`, which tells the browser to serve its stored copy without ever asking the server
+   * whether it is still true — so the manifest outlived the deployment that produced it. Rebaking
+   * the five panoramas from PNG to WebP is exactly the change that turns that into a broken game:
+   * a returning player kept requesting `backdrop_*_panorama.png`, the deployment no longer ships
+   * those names, the backdrop is a required asset, and the race stopped on "PISTA NO PREPARADA"
+   * behind a retry button that re-read the same stale copy. `no-cache` revalidates every time, so
+   * the manifest can never be older than the files it describes, and an unchanged one still costs
+   * only a 304. `refresh` skips the cache outright: that is the recovery path in
+   * `GameRuntime.create`, for a client whose stored copy is already wrong.
    */
-  static async load(fetchImpl: typeof fetch = fetch): Promise<AssetCatalog | null> {
+  static async load(
+    fetchImpl: typeof fetch = fetch,
+    options: { refresh?: boolean } = {},
+  ): Promise<AssetCatalog | null> {
     try {
-      const response = await fetchImpl(MANIFEST_URL, { cache: "force-cache" });
+      const response = await fetchImpl(MANIFEST_URL, { cache: options.refresh ? "reload" : "no-cache" });
       if (!response.ok) return null;
       const manifest = (await response.json()) as AssetManifest;
       if (!Array.isArray(manifest.assets) || manifest.assets.length === 0) return null;

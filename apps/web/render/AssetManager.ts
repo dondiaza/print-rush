@@ -57,8 +57,12 @@ export class AssetPreparationError extends Error {
 export class AssetManager {
   private constructor(readonly catalog: AssetCatalog) {}
 
-  static async create(fetchImpl: typeof fetch = fetch): Promise<AssetManager> {
-    const catalog = await AssetCatalog.load(fetchImpl);
+  /** `refresh` re-reads the manifest past every cache. See `AssetCatalog.load`. */
+  static async create(
+    fetchImpl: typeof fetch = fetch,
+    options: { refresh?: boolean } = {},
+  ): Promise<AssetManager> {
+    const catalog = await AssetCatalog.load(fetchImpl, options);
     if (!catalog) {
       throw new AssetPreparationError(
         "MANIFEST_UNAVAILABLE",
